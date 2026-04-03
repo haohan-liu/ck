@@ -1,511 +1,327 @@
-<template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="visible" class="modal-overlay" @click.self="handleClose">
-        <div class="modal-card">
-          <!-- Header -->
-          <div class="modal-header">
-            <h3 class="modal-title">
-              <span class="type-indicator" :class="`type-${type}`">
-                {{ getTypeName(type) }}
-              </span>
-              {{ product?.name }}
-            </h3>
-            <button class="modal-close" @click="handleClose">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Body -->
-          <div class="modal-body">
-            <!-- 商品信息 -->
-            <div class="product-info">
-              <div class="info-item">
-                <span class="info-label">SKU</span>
-                <span class="info-value sku">{{ product?.sku_code }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">当前库存</span>
-                <span class="info-value stock" :class="getStockClass()">{{ product?.current_stock }}</span>
-              </div>
-            </div>
-
-            <!-- 操作表单 -->
-            <div class="form-section">
-              <div class="form-field">
-                <label class="form-label required">
-                  {{ type === 'adjust' ? '调整后库存' : '数量' }}
-                </label>
-                <div class="input-wrapper">
-                  <input
-                    v-model.number="form.quantity"
-                    :type="type === 'adjust' ? 'number' : 'number'"
-                    class="form-input"
-                    :placeholder="type === 'adjust' ? '输入调整后的库存数量' : '输入数量'"
-                    min="1"
-                  />
-                  <span class="input-suffix">{{ product?.unit || '件' }}</span>
-                </div>
-                <p v-if="type === 'adjust'" class="form-hint">
-                  当前库存: {{ product?.current_stock }}，将调整为指定数量
-                </p>
-                <p v-else-if="type === 'in'" class="form-hint success">
-                  操作后库存: {{ product?.current_stock + (form.quantity || 0) }}
-                </p>
-                <p v-else-if="type === 'out'" class="form-hint" :class="{ error: form.quantity > product?.current_stock }">
-                  操作后库存: {{ product?.current_stock - (form.quantity || 0) }}
-                  <span v-if="form.quantity > product?.current_stock" class="error-text">（库存不足）</span>
-                </p>
-              </div>
-
-              <div class="form-field">
-                <label class="form-label">备注</label>
-                <input
-                  v-model="form.note"
-                  type="text"
-                  class="form-input"
-                  placeholder="选填，如：采购入库、销售出库..."
-                />
-              </div>
-
-              <div class="form-field">
-                <label class="form-label">操作人</label>
-                <input
-                  v-model="form.operator"
-                  type="text"
-                  class="form-input"
-                  placeholder="选填"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="handleClose">取消</button>
-            <button
-              class="btn"
-              :class="getSubmitClass()"
-              @click="handleSubmit"
-              :disabled="loading || !canSubmit"
-            >
-              <span v-if="loading" class="loading-spinner"></span>
-              {{ loading ? '处理中...' : getSubmitText() }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
-</template>
-
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { inventoryApi } from '@/api/index.js'
+import { stockIn, stockOut, stockAdjust } from '../api/inventory.js'
 
 const props = defineProps({
-  visible: { type: Boolean, default: false },
-  type: { type: String, default: 'in' }, // 'in', 'out', 'adjust'
-  product: { type: Object, default: null }
+  visible: Boolean,
+  product: Object,
+  mode: {
+    type: String,
+    default: 'in',
+  },
 })
-
 const emit = defineEmits(['close', 'success'])
 
-const loading = ref(false)
+// 防抖锁：防止连点
+// 修正：锁在 finally 后才释放，保证请求完成前按钮始终禁用
+const DEBOUNCE_MS = 800
+let debounceTimer = null
 
-const defaultForm = () => ({
-  quantity: null,
-  note: '',
-  operator: ''
+const quantity = ref(0)
+const note = ref('')
+const submitting = ref(false)
+const formError = ref('')
+const successMsg = ref('')
+
+const MODE_CONFIG = {
+  in: {
+    title: '入库',
+    action: '入库',
+    color: 'emerald',
+    hint: '输入入库数量，系统将累加到当前库存',
+    quantityHint: '入库数量（正整数）',
+  },
+  out: {
+    title: '出库',
+    action: '确认出库',
+    color: 'red',
+    hint: '输入出库数量，系统将从当前库存扣减',
+    quantityHint: '出库数量（正整数，不能超过当前库存）',
+  },
+  adjust: {
+    title: '库存调整',
+    action: '确认调整',
+    color: 'amber',
+    hint: '直接设置目标库存数量（原库存将被覆盖）',
+    quantityHint: '调整后的目标库存（填入最终数量）',
+  },
+}
+
+const config = computed(() => MODE_CONFIG[props.mode] || MODE_CONFIG.in)
+
+const colorClasses = computed(() => {
+  const c = config.value.color
+  if (c === 'emerald') return { btn: 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700', border: 'border-emerald-500/50' }
+  if (c === 'red') return { btn: 'bg-red-600 hover:bg-red-500 active:bg-red-700', border: 'border-red-500/50' }
+  if (c === 'amber') return { btn: 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700', border: 'border-amber-500/50' }
+  return { btn: 'bg-emerald-600', border: 'border-emerald-500/50' }
 })
 
-const form = ref(defaultForm())
-
-const canSubmit = computed(() => {
-  if (!form.value.quantity || form.value.quantity <= 0) return false
-  if (props.type === 'out' && form.value.quantity > (props.product?.current_stock || 0)) {
-    return false
-  }
-  return true
+const previewStock = computed(() => {
+  if (!props.product) return 0
+  const cur = props.product.current_stock || 0
+  const qty = Number(quantity.value) || 0
+  if (props.mode === 'in') return cur + qty
+  if (props.mode === 'out') return Math.max(0, cur - qty)
+  return qty
 })
+
+const previewDiff = computed(() => {
+  if (!props.product) return 0
+  const cur = props.product.current_stock || 0
+  if (props.mode === 'adjust') return (Number(quantity.value) || 0) - cur
+  return Number(quantity.value) || 0
+})
+
+const outOverWarning = computed(() => {
+  if (props.mode !== 'out' || !props.product) return ''
+  const qty = Number(quantity.value) || 0
+  const cur = props.product.current_stock || 0
+  if (qty > cur) return `超出当前库存 ${qty - cur} 件，无法出库`
+  return ''
+})
+
+const adjustPreview = computed(() => {
+  if (props.mode !== 'adjust' || !props.product) return ''
+  const cur = props.product.current_stock || 0
+  const target = Number(quantity.value) || 0
+  const diff = target - cur
+  if (diff > 0) return `将增加 ${diff} 件`
+  if (diff < 0) return `将减少 ${Math.abs(diff)} 件`
+  return '库存不变'
+})
+
+// 防抖是否仍处于冷却中（请求还没完成）
+const isDebouncing = computed(() => !!debounceTimer)
 
 watch(() => props.visible, (val) => {
   if (val) {
-    form.value = defaultForm()
+    quantity.value = 0
+    note.value = ''
+    formError.value = ''
+    successMsg.value = ''
+    clearDebounce()
   }
 })
 
-function getTypeName(type) {
-  const map = { in: '入库', out: '出库', adjust: '调整' }
-  return map[type] || type
+function clearDebounce() {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
 }
 
-function getStockClass() {
-  if (!props.product) return ''
-  const stock = props.product.current_stock
-  const min = props.product.min_stock
-  if (stock === 0) return 'zero'
-  if (stock <= min) return 'warn'
-  return 'ok'
+function validate() {
+  formError.value = ''
+  const qty = Number(quantity.value)
+  if (!qty || qty <= 0 || !Number.isInteger(qty)) {
+    formError.value = '数量必须为正整数'
+    return false
+  }
+  if (props.mode === 'out' && qty > (props.product?.current_stock || 0)) {
+    formError.value = '出库数量不能超过当前库存'
+    return false
+  }
+  if (props.mode === 'adjust' && qty < 0) {
+    formError.value = '调整后库存不能为负数'
+    return false
+  }
+  return true
 }
 
-function getSubmitClass() {
-  const map = { in: 'btn-success', out: 'btn-danger', adjust: 'btn-primary' }
-  return map[props.type] || 'btn-primary'
-}
+async function submit() {
+  if (!validate()) return
 
-function getSubmitText() {
-  const map = { in: '确认入库', out: '确认出库', adjust: '确认调整' }
-  return map[props.type] || '确认'
-}
+  // 防抖：冷却期内直接拦截
+  if (isDebouncing.value) return
 
-function handleClose() {
-  emit('close')
-}
+  submitting.value = true
 
-async function handleSubmit() {
-  if (!canSubmit.value) return
+  // 防抖计时器：请求完成（800ms 冷却期）后才释放锁
+  debounceTimer = setTimeout(() => {
+    clearDebounce()
+  }, DEBOUNCE_MS)
 
-  loading.value = true
+  const payload = {
+    product_id: props.product.id,
+    quantity: Number(quantity.value),
+    note: note.value.trim(),
+    operator: 'system',
+  }
+
   try {
-    let quantity = form.value.quantity
+    let res
+    if (props.mode === 'in') res = await stockIn(payload)
+    else if (props.mode === 'out') res = await stockOut(payload)
+    else res = await stockAdjust(payload)
 
-    // 调整模式：传入的是最终库存值，需要计算差值
-    if (props.type === 'adjust') {
-      quantity = quantity - (props.product?.current_stock || 0)
-    }
-
-    const payload = {
-      product_id: props.product.id,
-      quantity: quantity,
-      note: form.value.note.trim(),
-      operator: form.value.operator.trim() || 'system'
-    }
-
-    if (props.type === 'in') {
-      await inventoryApi.in(payload)
-    } else if (props.type === 'out') {
-      await inventoryApi.out(payload)
-    } else {
-      await inventoryApi.adjust(payload)
-    }
-
-    emit('success')
-    handleClose()
-  } catch (err) {
-    alert(err.message)
+    successMsg.value = res.data.message || '操作成功'
+    emit('success', { mode: props.mode, ...res.data })
+  } catch (e) {
+    formError.value = e.response?.data?.error || '操作失败，请重试'
+    // 请求失败时：不清除防抖锁，用户需等待冷却结束后才能重试
   } finally {
-    loading.value = false
+    submitting.value = false
+    // 关键修正：不在这里释放防抖锁，由 setTimeout 保证 800ms 冷却期
+    // 这样 800ms 内即使网络卡住/失败，用户也无法再次点击
   }
 }
 </script>
 
+<template>
+  <Transition name="modal-fade">
+    <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/65 backdrop-blur-sm" @click="$emit('close')"></div>
+
+      <div class="relative w-full max-w-md flex flex-col bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
+
+        <!-- 标题栏 -->
+        <div :class="['flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0', colorClasses.border]">
+          <h3 class="text-base font-semibold text-slate-100">
+            {{ config.title }} — {{ product?.name }}
+          </h3>
+          <button
+            @click="$emit('close')"
+            class="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-md transition-colors text-lg leading-none cursor-pointer"
+          >
+            &times;
+          </button>
+        </div>
+
+        <!-- 内容 -->
+        <div class="px-6 py-5 space-y-5">
+
+          <!-- 当前库存 vs 操作后库存 -->
+          <div class="flex items-center gap-4 p-4 bg-slate-950/60 rounded-xl border border-slate-800">
+            <div class="text-center flex-1">
+              <p class="text-xs text-slate-500 mb-1">当前库存</p>
+              <p class="text-2xl font-bold text-slate-200">{{ product?.current_stock ?? 0 }}</p>
+              <p class="text-xs text-slate-600">{{ product?.unit }}</p>
+            </div>
+            <div class="w-px h-12 bg-slate-800"></div>
+            <div class="text-center flex-1">
+              <p class="text-xs text-slate-500 mb-1">操作后库存</p>
+              <p
+                class="text-2xl font-bold"
+                :class="{
+                  'text-emerald-400': successMsg || (previewDiff > 0),
+                  'text-red-400': previewDiff < 0 && !successMsg,
+                  'text-slate-200': previewDiff === 0 && !successMsg,
+                }"
+              >
+                {{ previewStock }}
+              </p>
+              <p class="text-xs text-slate-600">{{ product?.unit }}</p>
+            </div>
+          </div>
+
+          <p class="text-xs text-slate-500 -mt-1">{{ config.hint }}</p>
+
+          <!-- 数量输入 -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-1.5">
+              {{ config.quantityHint }} <span class="text-red-400">*</span>
+            </label>
+            <div class="relative">
+              <input
+                v-model.number="quantity"
+                type="number"
+                min="1"
+                :max="mode === 'out' ? product?.current_stock : undefined"
+                placeholder="0"
+                class="w-full px-3.5 py-3 bg-slate-950 border border-slate-700 rounded-lg text-xl text-slate-200 text-center font-semibold focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                @keyup.enter="submit"
+              />
+            </div>
+            <p v-if="outOverWarning" class="text-xs text-red-400 mt-1.5 flex items-center gap-1">
+              <span class="text-base shrink-0">!</span>
+              {{ outOverWarning }}
+            </p>
+            <p v-if="mode === 'adjust' && quantity > 0" class="text-xs text-amber-400 mt-1.5">
+              {{ adjustPreview }}
+            </p>
+          </div>
+
+          <!-- 备注 -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-1.5">备注说明</label>
+            <textarea
+              v-model="note"
+              rows="2"
+              placeholder="选填，如：供应商送货 / 客户订单 / 盘点修正"
+              class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors resize-none leading-relaxed"
+            ></textarea>
+          </div>
+
+          <!-- 错误提示 -->
+          <div
+            v-if="formError"
+            class="flex items-center gap-2 px-3.5 py-2.5 bg-red-950/50 border border-red-900/60 rounded-lg text-sm text-red-300"
+          >
+            <span class="text-red-400 text-base shrink-0">!</span>
+            {{ formError }}
+          </div>
+
+          <!-- 成功提示 -->
+          <div
+            v-if="successMsg"
+            class="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-950/50 border border-emerald-900/60 rounded-lg text-sm text-emerald-300"
+          >
+            <span class="text-emerald-400 text-base shrink-0">&#10003;</span>
+            {{ successMsg }}
+          </div>
+        </div>
+
+        <!-- 底部 -->
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800 bg-slate-900/80 flex-shrink-0">
+          <button
+            @click="$emit('close')"
+            class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg transition-colors cursor-pointer"
+          >
+            关闭
+          </button>
+          <button
+            @click="submit"
+            :disabled="submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0"
+            :class="[
+              'px-5 py-2 text-sm text-white rounded-lg font-medium transition-colors cursor-pointer',
+              colorClasses.btn,
+              (submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0)
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            ]"
+          >
+            {{
+              submitting
+                ? '处理中…'
+                : isDebouncing
+                  ? `${DEBOUNCE_MS / 1000}s 防抖中…`
+                  : config.action
+            }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+</template>
+
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
-.modal-card {
-  background: white;
-  border-radius: 16px;
-  width: 100%;
-  max-width: 480px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.modal-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1a1a2e;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.type-indicator {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.25rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.type-in {
-  background: #f0fdf4;
-  color: #15803d;
-}
-
-.type-out {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.type-adjust {
-  background: #eff6ff;
-  color: #2563eb;
-}
-
-.modal-close {
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #6b7280;
-  transition: all 0.15s;
-}
-
-.modal-close:hover {
-  background: #f3f4f6;
-  color: #1a1a2e;
-}
-
-.modal-body {
-  padding: 1.5rem;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.modal-footer {
-  padding: 1rem 1.5rem;
-  border-top: 1px solid #f0f0f0;
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-}
-
-/* 商品信息 */
-.product-info {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  padding: 1rem;
-  background: #f9fafb;
-  border-radius: 10px;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.info-label {
-  font-size: 0.75rem;
-  color: #9ca3af;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.info-value {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.info-value.sku {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: #3b82f6;
-}
-
-.info-value.stock.ok {
-  color: #15803d;
-}
-
-.info-value.stock.warn {
-  color: #d97706;
-}
-
-.info-value.stock.zero {
-  color: #dc2626;
-}
-
-/* 表单 */
-.form-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.form-label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: #374151;
-}
-
-.form-label.required::after {
-  content: ' *';
-  color: #ef4444;
-}
-
-.input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.form-input {
-  flex: 1;
-  height: 2.625rem;
-  padding: 0 0.75rem;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  color: #1a1a2e;
-  background: white;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  outline: none;
-}
-
-.form-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-
-.input-suffix {
-  font-size: 0.875rem;
-  color: #9ca3af;
-}
-
-.form-hint {
-  font-size: 0.75rem;
-  color: #9ca3af;
-}
-
-.form-hint.success {
-  color: #15803d;
-}
-
-.form-hint.error {
-  color: #dc2626;
-}
-
-.error-text {
-  font-weight: 500;
-}
-
-/* 按钮 */
-.btn {
-  height: 2.625rem;
-  padding: 0 1.25rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border: none;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: #3b82f6;
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #2563eb;
-}
-
-.btn-success {
-  background: #22c55e;
-  color: white;
-}
-
-.btn-success:hover:not(:disabled) {
-  background: #16a34a;
-}
-
-.btn-danger {
-  background: #ef4444;
-  color: white;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-}
-
-.btn-secondary {
-  background: white;
-  color: #374151;
-  border: 1.5px solid #e5e7eb;
-}
-
-.btn-secondary:hover {
-  background: #f9fafb;
-}
-
-.loading-spinner {
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* 过渡动画 */
-.modal-enter-active,
-.modal-leave-active {
+.modal-fade-enter-active,
+.modal-fade-leave-active {
   transition: opacity 0.2s ease;
 }
-
-.modal-enter-active .modal-card,
-.modal-leave-active .modal-card {
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
+.modal-fade-enter-from,
+.modal-fade-leave-to {
   opacity: 0;
 }
 
-.modal-enter-from .modal-card,
-.modal-leave-to .modal-card {
-  transform: scale(0.95);
-  opacity: 0;
+/* 隐藏 number 输入框的浏览器原生箭头 */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 </style>

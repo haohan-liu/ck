@@ -1,192 +1,195 @@
-import { Router } from 'express';
-import { queries, execToObjects, execToRow, db, saveDB } from '../db.js';
+const express = require('express');
+const router = express.Router();
+const { getAll, getOne, runInsert, runQuery } = require('../db');
 
-const router = Router();
+const PINYIN_PREFIX = {
+  '奥迪盖子': 'ADGZ',
+  '雷克萨斯': 'LKS',
+  '路虎旋钮': 'LHXN',
+  '前按键': 'QAJ',
+  '黑钛色': 'HTS',
+  '手动挡': 'SCD',
+};
 
-function buildProductName(categoryName, attributes) {
-  const parts = Object.values(attributes).filter(v => v && String(v).trim());
-  return parts.length > 0 ? `${categoryName}-${parts.join('-')}` : categoryName;
+function getPrefixByCategoryName(name) {
+  return PINYIN_PREFIX[name] || name.slice(0, 2).toUpperCase();
 }
 
-// -------- GET /api/products --------
+function generateSkuCode(categoryName) {
+  const prefix = getPrefixByCategoryName(categoryName);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const random = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  return `${prefix}-${year}${month}-${random}`;
+}
+
+function formatProduct(p) {
+  if (!p) return null;
+  let attrs = p.attributes;
+  if (typeof attrs === 'string') {
+    try { attrs = JSON.parse(attrs); } catch { attrs = {}; }
+  }
+  return { ...p, attributes: attrs };
+}
+
 router.get('/', (req, res) => {
-  try {
-    const { category_id, keyword } = req.query;
-    const raw = queries.getAllProducts();
-    let products = execToObjects(raw).map(p => ({
-      ...p,
-      attributes: JSON.parse(p.attributes || '{}')
-    }));
-
-    if (category_id) {
-      products = products.filter(p => String(p.category_id) === String(category_id));
-    }
-    if (keyword) {
-      const kw = keyword.toLowerCase();
-      products = products.filter(p =>
-        (p.name || '').toLowerCase().includes(kw) ||
-        (p.sku_code || '').toLowerCase().includes(kw) ||
-        (p.category_name || '').toLowerCase().includes(kw) ||
-        JSON.stringify(p.attributes).toLowerCase().includes(kw)
-      );
-    }
-    res.json({ success: true, data: products });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message });
+  const { category_id, keyword } = req.query;
+  let sql = 'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1';
+  const params = [];
+  if (category_id) {
+    sql += ' AND p.category_id = ?';
+    params.push(category_id);
   }
+  if (keyword) {
+    sql += ' AND (p.name LIKE ? OR p.sku_code LIKE ? OR p.location_code LIKE ?)';
+    const kw = `%${keyword}%`;
+    params.push(kw, kw, kw);
+  }
+  sql += ' ORDER BY p.id DESC';
+  const products = getAll(sql, params);
+  res.json({ success: true, data: products.map(formatProduct) });
 });
 
-// -------- GET /api/products/:id --------
-router.get('/:id', (req, res) => {
-  try {
-    const productId = parseInt(req.params.id, 10);
-    if (isNaN(productId)) {
-      return res.status(400).json({ success: false, message: '无效的产品ID' });
-    }
-    const row = execToRow(queries.getProductById(productId));
-    if (!row) {
-      return res.status(404).json({ success: false, message: '产品不存在' });
-    }
-    res.json({
-      success: true,
-      data: {
-        ...row,
-        attributes: JSON.parse(row.attributes || '{}'),
-        template_schema: JSON.parse(row.template_schema || '[]')
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// -------- POST /api/products --------
-router.post('/', (req, res) => {
-  try {
-    const { category_id, sku_code, name: providedName, attributes, remark, location_code, current_stock, min_stock, unit, cost_price } = req.body;
-    if (!category_id || !sku_code) {
-      return res.status(400).json({ success: false, message: 'category_id 和 sku_code 必填' });
-    }
-    const catRow = execToRow(queries.getCategoryById(category_id));
-    if (!catRow) {
-      return res.status(400).json({ success: false, message: '大类不存在' });
-    }
-    const categoryName = catRow.name;
-    const attrs = attributes || {};
-    const name = providedName || buildProductName(categoryName, attrs);
-    const id = queries.createProduct(
-      category_id, sku_code, name, JSON.stringify(attrs), remark || '',
-      location_code || '', current_stock || 0, min_stock || 0, unit || '件', cost_price || 0
-    );
-    res.json({ success: true, data: { id, name } });
-  } catch (err) {
-    if (err.message.includes('UNIQUE')) {
-      return res.status(409).json({ success: false, message: 'SKU编号已存在' });
-    }
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// -------- PUT /api/products/:id --------
-router.put('/:id', (req, res) => {
-  try {
-    const { category_id, sku_code, name: providedName, attributes, remark, location_code, current_stock, min_stock, unit, cost_price } = req.body;
-    
-    const productId = parseInt(req.params.id, 10);
-    if (isNaN(productId)) {
-      return res.status(400).json({ success: false, message: '无效的产品ID' });
-    }
-    
-    if (!category_id || !sku_code) {
-      return res.status(400).json({ success: false, message: 'category_id 和 sku_code 必填' });
-    }
-    
-    const catId = parseInt(category_id, 10);
-    const catRow = execToRow(queries.getCategoryById(catId));
-    if (!catRow) {
-      return res.status(400).json({ success: false, message: '大类不存在' });
-    }
-    
-    const attrs = attributes || {};
-    const name = providedName || buildProductName(catRow.name, attrs);
-    
-    const changes = queries.updateProduct(
-      catId, sku_code, name, JSON.stringify(attrs), remark || '',
-      location_code || '', current_stock || 0, min_stock || 0, unit || '件', cost_price || 0,
-      productId
-    );
-    
-    if (changes === 0) {
-      return res.status(404).json({ success: false, message: '产品不存在' });
-    }
-    res.json({ success: true, message: '更新成功' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// -------- GET /api/products/sku/:code - 通过SKU查询 --------
 router.get('/sku/:code', (req, res) => {
-  try {
-    const result = queries.getProductBySku(req.params.code);
-    const row = execToRow(result);
-    if (!row) {
-      return res.status(404).json({ success: false, message: '未找到该SKU对应的商品' });
-    }
-    res.json({
-      success: true,
-      data: {
-        ...row,
-        attributes: JSON.parse(row.attributes || '{}')
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  const { code } = req.params;
+  const product = getOne(
+    'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.sku_code = ?',
+    [code]
+  );
+  if (product) {
+    res.json({ success: true, data: formatProduct(product) });
+  } else {
+    res.status(404).json({ success: false, error: '未找到该产品' });
   }
 });
 
-// -------- DELETE /api/products/:id --------
+router.get('/:id', (req, res) => {
+  const { id } = req.params;
+  const product = getOne(
+    'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+    [id]
+  );
+  if (product) {
+    res.json({ success: true, data: formatProduct(product) });
+  } else {
+    res.status(404).json({ success: false, error: '未找到该产品' });
+  }
+});
+
+router.post('/', (req, res) => {
+  const {
+    category_id, name, attributes, remark,
+    location_code, current_stock, min_stock, unit, cost_price
+  } = req.body;
+
+  if (!category_id || !name) {
+    return res.status(400).json({ success: false, error: '缺少必填字段' });
+  }
+
+  const category = getOne('SELECT * FROM categories WHERE id = ?', [category_id]);
+  if (!category) {
+    return res.status(400).json({ success: false, error: '无效的大类 ID' });
+  }
+
+  let sku_code = generateSkuCode(category.name);
+  let attempts = 0;
+  while (attempts < 20) {
+    const existing = getOne('SELECT id FROM products WHERE sku_code = ?', [sku_code]);
+    if (!existing) break;
+    sku_code = generateSkuCode(category.name);
+    attempts++;
+  }
+
+  const result = runInsert(
+    `INSERT INTO products (category_id, sku_code, name, attributes, remark, location_code, current_stock, min_stock, unit, cost_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      category_id,
+      sku_code,
+      name.trim(),
+      JSON.stringify(attributes || {}),
+      remark || '',
+      location_code || '',
+      current_stock || 0,
+      min_stock || 0,
+      unit || '件',
+      cost_price || 0,
+    ]
+  );
+
+  if (result.success) {
+    const newProduct = getOne('SELECT * FROM products WHERE id = ?', [result.lastId]);
+    res.json({ success: true, data: formatProduct(newProduct), sku_code });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
+  }
+});
+
+router.put('/:id', (req, res) => {
+  const { id } = req.params;
+  const {
+    category_id, name, attributes, remark,
+    location_code, current_stock, min_stock, unit, cost_price
+  } = req.body;
+
+  if (!category_id || !name) {
+    return res.status(400).json({ success: false, error: '缺少必填字段' });
+  }
+
+  const result = runQuery(
+    `UPDATE products SET category_id=?, name=?, attributes=?, remark=?, location_code=?, current_stock=?, min_stock=?, unit=?, cost_price=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+    [
+      category_id,
+      name.trim(),
+      JSON.stringify(attributes || {}),
+      remark || '',
+      location_code || '',
+      current_stock || 0,
+      min_stock || 0,
+      unit || '件',
+      cost_price || 0,
+      id,
+    ]
+  );
+
+  if (result.success) {
+    const updated = getOne('SELECT * FROM products WHERE id = ?', [id]);
+    res.json({ success: true, data: formatProduct(updated) });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
+  }
+});
+
 router.delete('/:id', (req, res) => {
-  try {
-    const productId = parseInt(req.params.id, 10);
-    if (isNaN(productId)) {
-      return res.status(400).json({ success: false, message: '无效的产品ID' });
-    }
-    const changes = queries.deleteProduct(productId);
-    if (changes === 0) {
-      return res.status(404).json({ success: false, message: '产品不存在' });
-    }
+  const { id } = req.params;
+  runQuery('DELETE FROM inventory_logs WHERE product_id = ?', [id]);
+  const result = runQuery('DELETE FROM products WHERE id = ?', [id]);
+  if (result.success) {
     res.json({ success: true, message: '删除成功' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
   }
 });
 
-// -------- DELETE /api/products/:id/reset - 重置损坏的商品 --------
-router.delete('/:id/reset', (req, res) => {
-  try {
-    const productId = parseInt(req.params.id, 10);
-    if (isNaN(productId)) {
-      return res.status(400).json({ success: false, message: '无效的产品ID' });
-    }
-    // 重置 attributes 为空对象，name 简化
-    db.run(`UPDATE products SET attributes = '{}' WHERE id = ${productId}`);
-    saveDB();
-    res.json({ success: true, message: '重置成功' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// -------- POST /api/products/reset-all - 重置所有损坏商品 --------
 router.post('/reset-all', (req, res) => {
-  try {
-    const result = queries.resetCorruptedProducts();
-    res.json({ success: true, message: `已重置 ${result} 条数据` });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+  const products = getAll("SELECT id, attributes FROM products");
+  let fixed = 0;
+  products.forEach(p => {
+    let attrs;
+    try { attrs = JSON.parse(p.attributes); } catch { attrs = null; }
+    if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) {
+      runQuery("UPDATE products SET attributes='{}' WHERE id=?", [p.id]);
+      fixed++;
+    } else {
+      const keys = Object.keys(attrs);
+      if (keys.length > 0 && keys.every(k => /^\d+$/.test(k))) {
+        runQuery("UPDATE products SET attributes='{}' WHERE id=?", [p.id]);
+        fixed++;
+      }
+    }
+  });
+  res.json({ success: true, message: `已修复 ${fixed} 条损坏数据` });
 });
 
-export default router;
+module.exports = router;

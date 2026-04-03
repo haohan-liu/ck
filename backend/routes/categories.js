@@ -1,98 +1,83 @@
-import { Router } from 'express';
-import { queries, execToObjects, execToRow } from '../db.js';
+const express = require('express');
+const router = express.Router();
+const { getAll, getOne, runInsert, runQuery } = require('../db');
 
-const router = Router();
+function formatCategory(cat) {
+  if (!cat) return null;
+  let template = cat.template_schema;
+  if (typeof template === 'string') {
+    try { template = JSON.parse(template); } catch { template = []; }
+  }
+  return { ...cat, template_schema: template };
+}
 
-// -------- GET /api/categories --------
 router.get('/', (req, res) => {
-  try {
-    const raw = queries.getAllCategories();
-    const categories = execToObjects(raw).map(c => ({
-      ...c,
-      template_schema: JSON.parse(c.template_schema)
-    }));
-    res.json({ success: true, data: categories });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+  const categories = getAll('SELECT * FROM categories ORDER BY id');
+  res.json({ success: true, data: categories.map(formatCategory) });
 });
 
-// -------- GET /api/categories/:id --------
 router.get('/:id', (req, res) => {
-  try {
-    const categoryId = parseInt(req.params.id, 10);
-    if (isNaN(categoryId)) {
-      return res.status(400).json({ success: false, message: '无效的大类ID' });
-    }
-    const row = execToRow(queries.getCategoryById(categoryId));
-    if (!row) {
-      return res.status(404).json({ success: false, message: '大类不存在' });
-    }
-    res.json({
-      success: true,
-      data: {
-        ...row,
-        template_schema: JSON.parse(row.template_schema)
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  const { id } = req.params;
+  const category = getOne('SELECT * FROM categories WHERE id = ?', [id]);
+  if (category) {
+    res.json({ success: true, data: formatCategory(category) });
+  } else {
+    res.status(404).json({ success: false, error: '未找到该大类' });
   }
 });
 
-// -------- POST /api/categories --------
 router.post('/', (req, res) => {
-  try {
-    const { name, template_schema } = req.body;
-    if (!name || !template_schema) {
-      return res.status(400).json({ success: false, message: 'name 和 template_schema 必填' });
-    }
-    const id = queries.createCategory(name, JSON.stringify(template_schema));
-    res.json({ success: true, data: { id, name, template_schema } });
-  } catch (err) {
-    if (err.message.includes('UNIQUE')) {
-      return res.status(409).json({ success: false, message: '大类名称已存在' });
-    }
-    res.status(500).json({ success: false, message: err.message });
+  const { name, template_schema } = req.body;
+  if (!name) {
+    return res.status(400).json({ success: false, error: '名称不能为空' });
+  }
+  const schema = Array.isArray(template_schema) ? template_schema : [];
+  const result = runInsert(
+    'INSERT INTO categories (name, template_schema) VALUES (?, ?)',
+    [name.trim(), JSON.stringify(schema)]
+  );
+  if (result.success) {
+    const newCategory = getOne('SELECT * FROM categories WHERE id = ?', [result.lastId]);
+    res.json({ success: true, data: formatCategory(newCategory) });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
   }
 });
 
-// -------- PUT /api/categories/:id --------
 router.put('/:id', (req, res) => {
-  try {
-    const categoryId = parseInt(req.params.id, 10);
-    if (isNaN(categoryId)) {
-      return res.status(400).json({ success: false, message: '无效的大类ID' });
-    }
-    const { name, template_schema } = req.body;
-    const changes = queries.updateCategory(name, JSON.stringify(template_schema), categoryId);
-    if (changes === 0) {
-      return res.status(404).json({ success: false, message: '大类不存在' });
-    }
-    res.json({ success: true, message: '更新成功' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+  const { id } = req.params;
+  const { name, template_schema } = req.body;
+  if (!name) {
+    return res.status(400).json({ success: false, error: '名称不能为空' });
+  }
+  const schema = Array.isArray(template_schema) ? template_schema : [];
+  const result = runQuery(
+    'UPDATE categories SET name = ?, template_schema = ? WHERE id = ?',
+    [name.trim(), JSON.stringify(schema), id]
+  );
+  if (result.success) {
+    const updated = getOne('SELECT * FROM categories WHERE id = ?', [id]);
+    res.json({ success: true, data: formatCategory(updated) });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
   }
 });
 
-// -------- DELETE /api/categories/:id --------
 router.delete('/:id', (req, res) => {
-  try {
-    const categoryId = parseInt(req.params.id, 10);
-    if (isNaN(categoryId)) {
-      return res.status(400).json({ success: false, message: '无效的大类ID' });
-    }
-    const changes = queries.deleteCategory(categoryId);
-    if (changes === 0) {
-      return res.status(404).json({ success: false, message: '大类不存在' });
-    }
+  const { id } = req.params;
+  const products = getAll('SELECT COUNT(*) as count FROM products WHERE category_id = ?', [id]);
+  if (products[0].count > 0) {
+    return res.status(400).json({
+      success: false,
+      error: `该大类下存在 ${products[0].count} 个产品，无法删除`
+    });
+  }
+  const result = runQuery('DELETE FROM categories WHERE id = ?', [id]);
+  if (result.success) {
     res.json({ success: true, message: '删除成功' });
-  } catch (err) {
-    if (err.message.includes('FOREIGN KEY')) {
-      return res.status(409).json({ success: false, message: '该大类下存在产品，无法删除' });
-    }
-    res.status(500).json({ success: false, message: err.message });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
   }
 });
 
-export default router;
+module.exports = router;
