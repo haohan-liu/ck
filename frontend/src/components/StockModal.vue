@@ -12,8 +12,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'success'])
 
-// 防抖锁：防止连点
-// 修正：锁在 finally 后才释放，保证请求完成前按钮始终禁用
 const DEBOUNCE_MS = 800
 let debounceTimer = null
 
@@ -91,7 +89,6 @@ const adjustPreview = computed(() => {
   return '库存不变'
 })
 
-// 防抖是否仍处于冷却中（请求还没完成）
 const isDebouncing = computed(() => !!debounceTimer)
 
 watch(() => props.visible, (val) => {
@@ -132,12 +129,10 @@ function validate() {
 async function submit() {
   if (!validate()) return
 
-  // 防抖：冷却期内直接拦截
   if (isDebouncing.value) return
 
   submitting.value = true
 
-  // 防抖计时器：请求完成（800ms 冷却期）后才释放锁
   debounceTimer = setTimeout(() => {
     clearDebounce()
   }, DEBOUNCE_MS)
@@ -159,11 +154,8 @@ async function submit() {
     emit('success', { mode: props.mode, ...res.data })
   } catch (e) {
     formError.value = e.response?.data?.error || '操作失败，请重试'
-    // 请求失败时：不清除防抖锁，用户需等待冷却结束后才能重试
   } finally {
     submitting.value = false
-    // 关键修正：不在这里释放防抖锁，由 setTimeout 保证 800ms 冷却期
-    // 这样 800ms 内即使网络卡住/失败，用户也无法再次点击
   }
 }
 </script>
@@ -171,18 +163,19 @@ async function submit() {
 <template>
   <Transition name="modal-fade">
     <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/65 backdrop-blur-sm" @click="$emit('close')"></div>
+      <!-- 遮罩层（禁止点击关闭） -->
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm cursor-default"></div>
 
-      <div class="relative w-full max-w-md flex flex-col bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
+      <div class="relative w-full max-w-md flex flex-col bg-[var(--modal-bg)] border-[var(--border-strong)] rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
 
         <!-- 标题栏 -->
-        <div :class="['flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0', colorClasses.border]">
-          <h3 class="text-base font-semibold text-slate-100">
+        <div :class="['flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)] flex-shrink-0', colorClasses.border]">
+          <h3 class="text-base font-semibold text-[var(--text-primary)]">
             {{ config.title }} — {{ product?.name }}
           </h3>
           <button
             @click="$emit('close')"
-            class="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-md transition-colors text-lg leading-none cursor-pointer"
+            class="w-7 h-7 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] rounded-md transition-all duration-150 text-lg leading-none cursor-pointer"
           >
             &times;
           </button>
@@ -192,34 +185,34 @@ async function submit() {
         <div class="px-6 py-5 space-y-5">
 
           <!-- 当前库存 vs 操作后库存 -->
-          <div class="flex items-center gap-4 p-4 bg-slate-950/60 rounded-xl border border-slate-800">
+          <div class="flex items-center gap-4 p-4 bg-[var(--input-bg)]/60 rounded-xl border border-[var(--border-default)]">
             <div class="text-center flex-1">
-              <p class="text-xs text-slate-500 mb-1">当前库存</p>
-              <p class="text-2xl font-bold text-slate-200">{{ product?.current_stock ?? 0 }}</p>
-              <p class="text-xs text-slate-600">{{ product?.unit }}</p>
+              <p class="text-xs text-[var(--text-muted)] mb-1">当前库存</p>
+              <p class="text-2xl font-bold text-[var(--text-primary)]">{{ product?.current_stock ?? 0 }}</p>
+              <p class="text-xs text-[var(--text-muted)]">{{ product?.unit }}</p>
             </div>
-            <div class="w-px h-12 bg-slate-800"></div>
+            <div class="w-px h-12 bg-[var(--border-default)]"></div>
             <div class="text-center flex-1">
-              <p class="text-xs text-slate-500 mb-1">操作后库存</p>
+              <p class="text-xs text-[var(--text-muted)] mb-1">操作后库存</p>
               <p
                 class="text-2xl font-bold"
                 :class="{
                   'text-emerald-400': successMsg || (previewDiff > 0),
                   'text-red-400': previewDiff < 0 && !successMsg,
-                  'text-slate-200': previewDiff === 0 && !successMsg,
+                  'text-[var(--text-primary)]': previewDiff === 0 && !successMsg,
                 }"
               >
                 {{ previewStock }}
               </p>
-              <p class="text-xs text-slate-600">{{ product?.unit }}</p>
+              <p class="text-xs text-[var(--text-muted)]">{{ product?.unit }}</p>
             </div>
           </div>
 
-          <p class="text-xs text-slate-500 -mt-1">{{ config.hint }}</p>
+          <p class="text-xs text-[var(--text-muted)] -mt-1">{{ config.hint }}</p>
 
           <!-- 数量输入 -->
           <div>
-            <label class="block text-sm font-medium text-slate-300 mb-1.5">
+            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
               {{ config.quantityHint }} <span class="text-red-400">*</span>
             </label>
             <div class="relative">
@@ -229,7 +222,7 @@ async function submit() {
                 min="1"
                 :max="mode === 'out' ? product?.current_stock : undefined"
                 placeholder="0"
-                class="w-full px-3.5 py-3 bg-slate-950 border border-slate-700 rounded-lg text-xl text-slate-200 text-center font-semibold focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                class="w-full px-3.5 py-3 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-xl text-[var(--text-primary)] text-center font-semibold focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 @keyup.enter="submit"
               />
             </div>
@@ -244,12 +237,12 @@ async function submit() {
 
           <!-- 备注 -->
           <div>
-            <label class="block text-sm font-medium text-slate-300 mb-1.5">备注说明</label>
+            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">备注说明</label>
             <textarea
               v-model="note"
               rows="2"
               placeholder="选填，如：供应商送货 / 客户订单 / 盘点修正"
-              class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors resize-none leading-relaxed"
+              class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 resize-none leading-relaxed"
             ></textarea>
           </div>
 
@@ -273,10 +266,10 @@ async function submit() {
         </div>
 
         <!-- 底部 -->
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800 bg-slate-900/80 flex-shrink-0">
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--border-default)] bg-[var(--modal-bg)]/80 flex-shrink-0">
           <button
             @click="$emit('close')"
-            class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg transition-colors cursor-pointer"
+            class="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--border-strong)] rounded-lg transition-all duration-150 cursor-pointer"
           >
             关闭
           </button>
@@ -284,7 +277,7 @@ async function submit() {
             @click="submit"
             :disabled="submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0"
             :class="[
-              'px-5 py-2 text-sm text-white rounded-lg font-medium transition-colors cursor-pointer',
+              'px-5 py-2 text-sm text-white rounded-lg font-medium transition-all duration-150 cursor-pointer',
               colorClasses.btn,
               (submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0)
                 ? 'opacity-50 cursor-not-allowed'

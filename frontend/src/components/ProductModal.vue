@@ -4,17 +4,15 @@ import { getCategories } from '../api/categories.js'
 
 const props = defineProps({
   visible: Boolean,
-  product: Object,     // null = 新增, Object = 编辑
+  product: Object,
 })
 const emit = defineEmits(['close', 'success'])
 
-// 所有大类
 const categories = ref([])
 const categoryLoading = ref(false)
 
 const mode = computed(() => props.product ? 'edit' : 'add')
 
-// 表单基础字段
 const form = ref({
   category_id: '',
   remark: '',
@@ -25,50 +23,12 @@ const form = ref({
   cost_price: 0,
 })
 
-// 动态规格属性
 const attrs = ref({})
-
-// 原始 product 数据（编辑时）
 const originalProduct = ref(null)
-
-// 错误提示
 const formError = ref('')
-
-// 提交中
 const submitting = ref(false)
 
-// 各大类固定的选项配置（按钮组）
-const FIELD_OPTIONS = {
-  '奥迪盖子': {
-    '规格':     { type: 'radio', options: ['发光', '不发光'] },
-    '型号':     { type: 'radio', options: ['A6L', 'A4L', 'A8L'] },
-    'LOGO':     { type: 'text' },
-  },
-  '雷克萨斯': {
-    '型号':     { type: 'radio', options: ['ES', 'RX', 'NX', 'LS', 'IS', 'UX'] },
-    'LOGO':     { type: 'text' },
-  },
-  '路虎旋钮': {
-    '型号':     { type: 'radio', options: ['揽胜', '发现', '卫士', '揽运', '极光'] },
-    '颜色':     { type: 'text' },
-  },
-  '前按键': {
-    '型号':     { type: 'radio', options: ['高配', '低配', '运动款'] },
-    'LOGO':     { type: 'text' },
-  },
-  '黑钛色': {
-    '型号':     { type: 'radio', options: ['A6L', 'A4L', 'A8L', 'A3'] },
-    '材质':     { type: 'text' },
-    '适用车型': { type: 'text' },
-  },
-  '手动挡': {
-    '型号':     { type: 'radio', options: ['6挡', '5挡', '4挡'] },
-    '挡位':     { type: 'radio', options: ['标准', '运动'] },
-    '材质':     { type: 'text' },
-  },
-}
-
-// 当前选中大类的规格模板
+// 动态规格模板（完全由后端数据驱动）
 const currentSchema = computed(() => {
   if (!form.value.category_id) return []
   const cat = categories.value.find(c => c.id === form.value.category_id)
@@ -81,15 +41,6 @@ const currentCategoryName = computed(() => {
   const cat = categories.value.find(c => c.id === form.value.category_id)
   return cat ? cat.name : ''
 })
-
-// 根据字段名获取字段配置
-function getFieldConfig(fieldName) {
-  const catName = currentCategoryName.value
-  if (FIELD_OPTIONS[catName] && FIELD_OPTIONS[catName][fieldName]) {
-    return FIELD_OPTIONS[catName][fieldName]
-  }
-  return { type: 'text' }
-}
 
 // 自动生成的商品名称
 const autoName = computed(() => {
@@ -104,13 +55,13 @@ const autoName = computed(() => {
   return parts.join('-')
 })
 
-// 监听：大类切换时重置 attrs
+// 大类切换时重置 attrs
 watch(() => form.value.category_id, (newId) => {
   attrs.value = {}
   formError.value = ''
 })
 
-// 监听：props.product 变化时填充表单
+// 填充表单数据
 watch(() => props.visible, async (val) => {
   if (val) {
     await loadCategories()
@@ -196,19 +147,19 @@ const UNITS = ['件', '个', '套', '对', '箱', '盒']
 <template>
   <Transition name="modal-fade">
     <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <!-- 遮罩 -->
-      <div class="absolute inset-0 bg-black/65 backdrop-blur-sm" @click="$emit('close')"></div>
+      <!-- 遮罩层（禁止点击关闭） -->
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm cursor-default"></div>
 
-      <!-- 弹窗 -->
-      <div class="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
+      <!-- 弹窗主体 -->
+      <div class="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-[var(--modal-bg)] border-[var(--border-strong)] rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
         <!-- 标题栏 -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
-          <h3 class="text-base font-semibold text-slate-100">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)] flex-shrink-0">
+          <h3 class="text-base font-semibold text-[var(--text-primary)]">
             {{ mode === 'add' ? '新增商品' : '编辑商品' }}
           </h3>
           <button
             @click="$emit('close')"
-            class="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-md transition-colors text-lg leading-none cursor-pointer"
+            class="w-7 h-7 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] rounded-md transition-all duration-150 text-lg leading-none cursor-pointer"
           >
             &times;
           </button>
@@ -218,161 +169,136 @@ const UNITS = ['件', '个', '套', '对', '箱', '盒']
         <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
           <!-- 第一行：大类 + 单位 -->
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-2 gap-5">
             <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1.5">
+              <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
                 商品大类 <span class="text-red-400">*</span>
               </label>
               <select
                 v-model="form.category_id"
                 :disabled="mode === 'edit'"
-                class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
               >
                 <option value="" disabled>请选择大类…</option>
                 <option v-for="cat in categories" :key="cat.id" :value="cat.id">
                   {{ cat.name }}
                 </option>
               </select>
-              <p v-if="mode === 'edit'" class="text-xs text-slate-600 mt-1">编辑时不可切换大类</p>
+              <p v-if="mode === 'edit'" class="text-xs text-[var(--text-muted)] mt-1">编辑时不可切换大类</p>
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1.5">库存单位</label>
+              <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">库存单位</label>
               <select
                 v-model="form.unit"
-                class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors cursor-pointer appearance-none"
+                class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 cursor-pointer appearance-none"
               >
                 <option v-for="u in UNITS" :key="u" :value="u">{{ u }}</option>
               </select>
             </div>
           </div>
 
-          <!-- 动态规格字段 -->
+          <!-- 动态规格字段（完全数据驱动） -->
           <div v-if="currentSchema.length > 0">
-            <label class="block text-sm font-medium text-slate-300 mb-2">
+            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-2">
               规格信息 <span class="text-red-400">*</span>
             </label>
 
-            <div class="space-y-4 p-4 bg-slate-950/60 rounded-xl border border-slate-800">
+            <div class="space-y-4 p-4 bg-[var(--input-bg)]/40 rounded-xl border border-[var(--border-default)]">
               <div
                 v-for="field in currentSchema"
                 :key="field"
                 class="flex flex-col gap-2"
               >
-                <!-- 字段标签 -->
-                <span class="text-xs font-medium text-slate-500 uppercase tracking-wider">{{ field }}</span>
-
-                <!-- 按钮组类型（有固定选项） -->
-                <div
-                  v-if="getFieldConfig(field).type === 'radio'"
-                  class="flex flex-wrap gap-2"
-                >
-                  <button
-                    v-for="opt in getFieldConfig(field).options"
-                    :key="opt"
-                    type="button"
-                    @click="attrs[field] = opt"
-                    class="px-3.5 py-1.5 text-sm rounded-md border font-medium transition-all duration-150 cursor-pointer"
-                    :class="
-                      attrs[field] === opt
-                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm'
-                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200'
-                    "
-                  >
-                    {{ opt }}
-                  </button>
-                </div>
-
-                <!-- 文本输入类型 -->
+                <span class="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">{{ field }}</span>
                 <input
-                  v-else
                   v-model="attrs[field]"
                   type="text"
                   :placeholder="`请输入${field}`"
-                  class="w-full px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                  class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200"
                 />
               </div>
             </div>
           </div>
 
           <!-- 尚未选择大类时的提示 -->
-          <div v-else class="flex items-center gap-3 px-4 py-3 bg-slate-950/40 border border-slate-800 rounded-xl text-sm text-slate-500">
-            <span class="text-slate-600 text-lg">☰</span>
+          <div v-else class="flex items-center gap-3 px-4 py-3 bg-[var(--input-bg)]/30 border border-[var(--border-default)] rounded-xl text-sm text-[var(--text-muted)]">
+            <span class="text-[var(--text-muted)] text-lg">☰</span>
             请先在上方选择一个商品大类
           </div>
 
           <!-- 自动生成的商品名称 -->
           <div>
-            <label class="block text-sm font-medium text-slate-300 mb-1.5">
+            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
               商品名称 <span class="text-red-400">*</span>
             </label>
-            <div class="px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm min-h-[42px] flex items-center">
+            <div class="px-3.5 py-2.5 bg-[var(--input-bg)] border border-[var(--border-default)] rounded-lg text-sm min-h-[42px] flex items-center">
               <span
                 v-if="autoName && autoName !== currentCategoryName"
-                class="text-emerald-400 font-medium"
+                class="text-[var(--accent)] font-medium"
               >
                 {{ autoName }}
               </span>
-              <span v-else class="text-slate-600 italic">
+              <span v-else class="text-[var(--text-muted)] italic">
                 填写上方规格信息后自动生成
               </span>
             </div>
-            <p class="text-xs text-slate-600 mt-1.5">系统根据大类与规格属性自动拼接生成</p>
+            <p class="text-xs text-[var(--text-muted)] mt-1.5">系统根据大类与规格属性自动拼接生成</p>
           </div>
 
           <!-- 第二行：库存信息 -->
-          <div class="grid grid-cols-3 gap-4">
+          <div class="grid grid-cols-3 gap-5">
             <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1.5">当前库存</label>
+              <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">当前库存</label>
               <input
                 v-model.number="form.current_stock"
                 type="number"
                 min="0"
                 placeholder="0"
-                class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1.5">最低库存预警</label>
+              <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">最低库存预警</label>
               <input
                 v-model.number="form.min_stock"
                 type="number"
                 min="0"
                 placeholder="0"
-                class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1.5">成本单价 (元)</label>
+              <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">成本单价 (元)</label>
               <input
                 v-model.number="form.cost_price"
                 type="number"
                 min="0"
                 step="0.01"
                 placeholder="0.00"
-                class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+                class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200"
               />
             </div>
           </div>
 
           <!-- 第三行：库位编码 -->
           <div>
-            <label class="block text-sm font-medium text-slate-300 mb-1.5">库位编码</label>
+            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">库位编码</label>
             <input
               v-model="form.location_code"
               type="text"
               placeholder="例如：A-01-03"
-              class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+              class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200"
             />
           </div>
 
           <!-- 备注 -->
           <div>
-            <label class="block text-sm font-medium text-slate-300 mb-1.5">备注</label>
+            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">备注</label>
             <textarea
               v-model="form.remark"
               rows="2"
               placeholder="选填，商品备注说明"
-              class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors resize-none"
+              class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 resize-none"
             ></textarea>
           </div>
 
@@ -387,17 +313,17 @@ const UNITS = ['件', '个', '套', '对', '箱', '盒']
         </div>
 
         <!-- 底部按钮 -->
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800 bg-slate-900/80 flex-shrink-0">
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--border-default)] bg-[var(--modal-bg)]/80 flex-shrink-0">
           <button
             @click="$emit('close')"
-            class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 border border-slate-700 rounded-lg transition-colors cursor-pointer"
+            class="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--border-strong)] rounded-lg transition-all duration-150 cursor-pointer"
           >
             取消
           </button>
           <button
             @click="submit"
             :disabled="submitting"
-            class="px-5 py-2 text-sm text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium transition-colors cursor-pointer"
+            class="px-5 py-2 text-sm text-white bg-[var(--accent)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-active)] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium transition-all duration-150 cursor-pointer"
           >
             {{ submitting ? '提交中…' : (mode === 'add' ? '确认新增' : '保存修改') }}
           </button>

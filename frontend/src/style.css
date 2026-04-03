@@ -1,17 +1,111 @@
 @import 'tailwindcss';
 
+/* ====================================
+   CSS 主题变量定义
+   ==================================== */
+
+/* 暗色主题（默认） */
+:root,
+[data-theme="dark"] {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #0f172a;
+  --bg-tertiary: #1e293b;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+
+  --border-default: #1e293b;
+  --border-strong: #334155;
+
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-active: #047857;
+  --accent-glow: rgba(16, 185, 129, 0.25);
+
+  --input-bg: #0f172a;
+  --input-border: #334155;
+
+  --modal-bg: #1e293b;
+  --hover-bg: rgba(51, 65, 85, 0.5);
+
+  --header-bg: rgba(15, 23, 42, 0.8);
+  --row-bg: rgba(15, 23, 42, 0.4);
+}
+
+/* 浅色主题 */
+[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #94a3b8;
+
+  --border-default: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --accent: #059669;
+  --accent-hover: #10b981;
+  --accent-active: #047857;
+  --accent-glow: rgba(5, 150, 105, 0.2);
+
+  --input-bg: #ffffff;
+  --input-border: #cbd5e1;
+
+  --modal-bg: #ffffff;
+  --hover-bg: rgba(241, 245, 249, 0.8);
+
+  --header-bg: rgba(248, 250, 252, 0.9);
+  --row-bg: rgba(248, 250, 252, 0.4);
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #0f172a;
+  background-color: var(--bg-primary);
+  transition: background-color 0.3s ease;
 }
 
-/* ============================
-   全局表单控件样式重置
-   ============================ */
+/* ====================================
+   全局表单控件样式
+   ==================================== */
 
-/* select 自定义下拉箭头（消除浏览器默认样式） */
+/* 输入框基础样式 */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+textarea {
+  background-color: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  outline: none;
+}
+
+/* placeholder 颜色 */
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* select 样式 */
 select {
+  background-color: var(--input-bg);
+  border: 1.5px solid var(--input-border);
+  color: var(--text-primary);
+  transition: all 0.2s ease;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
@@ -23,16 +117,14 @@ select {
   cursor: pointer;
 }
 
-/* select hover 箭头颜色变亮 */
 select:hover {
-  border-color: #475569;
+  border-color: var(--border-strong);
 }
 
-/* select focus 聚焦 */
 select:focus {
   outline: none;
-  border-color: #10b981;
-  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 /* number 输入框：隐藏原生递增/递减箭头 */
@@ -45,23 +137,29 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
-/* 滚动条美化 */
+/* ====================================
+   滚动条美化
+   ==================================== */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: var(--bg-tertiary);
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--border-strong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--text-muted);
 }
 
-/* 全局过渡动画（供组件引用） */
+/* ====================================
+   全局过渡动画
+   ==================================== */
+
 .page-enter-active,
 .page-leave-active {
   transition: opacity 0.2s ease;
@@ -69,4 +167,43 @@ input[type="number"]::-webkit-inner-spin-button {
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
+}
+
+/* ====================================
+   通用弹窗遮罩样式
+   ==================================== */
+
+.modal-backdrop {
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+/* ====================================
+   按钮基础样式
+   ==================================== */
+
+.btn-primary {
+  background-color: var(--accent);
+  color: white;
+  transition: all 0.15s ease;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-primary:active {
+  background-color: var(--accent-active);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  border: 1.5px solid var(--border-default);
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }

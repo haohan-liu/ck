@@ -60,12 +60,28 @@ function createTables() {
       product_id INTEGER NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('in', 'out', 'adjust')),
       quantity INTEGER NOT NULL,
+      stock_before INTEGER DEFAULT 0,
+      stock_after INTEGER DEFAULT 0,
       note TEXT,
       operator TEXT DEFAULT 'system',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id)
     )
   `);
+
+  // 迁移：为现有 inventory_logs 表添加 stock_before 和 stock_after 列（如果不存在）
+  try {
+    db.run('ALTER TABLE inventory_logs ADD COLUMN stock_before INTEGER DEFAULT 0');
+    console.log('[DB] 迁移：已添加 stock_before 列');
+  } catch (e) {
+    // 列已存在，忽略错误
+  }
+  try {
+    db.run('ALTER TABLE inventory_logs ADD COLUMN stock_after INTEGER DEFAULT 0');
+    console.log('[DB] 迁移：已添加 stock_after 列');
+  } catch (e) {
+    // 列已存在，忽略错误
+  }
 
   console.log('[DB] 表结构创建完成');
 }

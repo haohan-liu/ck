@@ -38,14 +38,14 @@ onMounted(loadStats)
 <template>
   <div class="flex flex-col h-full">
     <!-- 页面头部 -->
-    <header class="flex items-center justify-between px-8 py-5 border-b border-slate-800 flex-shrink-0">
+    <header class="flex items-center justify-between px-8 py-5 border-b border-[var(--border-default)] flex-shrink-0">
       <div>
-        <h2 class="text-lg font-semibold text-slate-100">统计面板</h2>
-        <p class="text-xs text-slate-500 mt-0.5">实时库存概况与业务数据</p>
+        <h2 class="text-lg font-semibold text-[var(--text-primary)]">统计面板</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-0.5">实时库存概况与业务数据</p>
       </div>
       <button
         @click="loadStats"
-        class="flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg transition-colors cursor-pointer"
+        class="flex items-center gap-2 px-3 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--border-strong)] rounded-lg transition-all duration-150 cursor-pointer"
       >
         &#8635; 刷新
       </button>
@@ -55,8 +55,8 @@ onMounted(loadStats)
 
       <!-- 加载中 -->
       <div v-if="loading" class="flex justify-center py-16">
-        <div class="flex flex-col items-center gap-3 text-slate-500">
-          <div class="w-8 h-8 border-2 border-slate-600 border-t-emerald-500 rounded-full animate-spin"></div>
+        <div class="flex flex-col items-center gap-3 text-[var(--text-muted)]">
+          <div class="w-8 h-8 border-2 border-[var(--border-default)] border-t-[var(--accent)] rounded-full animate-spin"></div>
           <span class="text-sm">加载中…</span>
         </div>
       </div>
@@ -69,34 +69,34 @@ onMounted(loadStats)
       <div v-else-if="stats">
 
         <!-- ==================== 核心指标卡片 ==================== -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-5">
           <!-- 总产品数 -->
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-            <p class="text-xs text-slate-500 mb-2">总产品数</p>
-            <p class="text-3xl font-bold text-slate-100">{{ stats.totalProducts }}</p>
+          <div class="rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/60 p-5">
+            <p class="text-xs text-[var(--text-muted)] mb-2">总产品数</p>
+            <p class="text-3xl font-bold text-[var(--text-primary)]">{{ stats.totalProducts }}</p>
           </div>
           <!-- 总库存数量 -->
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-            <p class="text-xs text-slate-500 mb-2">总库存数量</p>
+          <div class="rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/60 p-5">
+            <p class="text-xs text-[var(--text-muted)] mb-2">总库存数量</p>
             <p class="text-3xl font-bold text-emerald-400">{{ stats.totalStock }}</p>
           </div>
           <!-- 库存总价值 -->
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-            <p class="text-xs text-slate-500 mb-2">库存总价值</p>
-            <p class="text-3xl font-bold text-slate-100">
+          <div class="rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/60 p-5">
+            <p class="text-xs text-[var(--text-muted)] mb-2">库存总价值</p>
+            <p class="text-3xl font-bold text-[var(--text-primary)]">
               ¥{{ Number(stats.totalValue || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
             </p>
           </div>
           <!-- 低库存预警 -->
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 relative overflow-hidden">
-            <p class="text-xs text-slate-500 mb-2">低库存预警</p>
+          <div class="rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/60 p-5 relative overflow-hidden">
+            <p class="text-xs text-[var(--text-muted)] mb-2">低库存预警</p>
             <p
               class="text-3xl font-bold"
               :class="stats.lowStockCount > 0 ? 'text-red-400' : 'text-emerald-400'"
             >
               {{ stats.lowStockCount }}
             </p>
-            <p class="text-xs mt-0.5" :class="stats.zeroStockCount > 0 ? 'text-red-500' : 'text-slate-600'">
+            <p class="text-xs mt-0.5" :class="stats.zeroStockCount > 0 ? 'text-red-500' : 'text-[var(--text-muted)]'">
               其中缺货 {{ stats.zeroStockCount }} 件
             </p>
             <!-- 警示条 -->
@@ -108,18 +108,18 @@ onMounted(loadStats)
         </div>
 
         <!-- ==================== 今日进出库 ==================== -->
-        <div class="grid grid-cols-2 gap-4">
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex items-center gap-4">
+        <div class="grid grid-cols-2 gap-5">
+          <div class="rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/60 p-5 flex items-center gap-4">
             <div class="w-10 h-10 rounded-full bg-emerald-950/60 flex items-center justify-center text-emerald-400 text-xl shrink-0">+</div>
             <div>
-              <p class="text-xs text-slate-500 mb-1">今日入库</p>
+              <p class="text-xs text-[var(--text-muted)] mb-1">今日入库</p>
               <p class="text-2xl font-bold text-emerald-400">+{{ stats.todayIn }}</p>
             </div>
           </div>
-          <div class="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex items-center gap-4">
+          <div class="rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]/60 p-5 flex items-center gap-4">
             <div class="w-10 h-10 rounded-full bg-red-950/60 flex items-center justify-center text-red-400 text-xl shrink-0">-</div>
             <div>
-              <p class="text-xs text-slate-500 mb-1">今日出库</p>
+              <p class="text-xs text-[var(--text-muted)] mb-1">今日出库</p>
               <p class="text-2xl font-bold text-red-400">-{{ stats.todayOut }}</p>
             </div>
           </div>
@@ -165,7 +165,7 @@ onMounted(loadStats)
 
             <table class="w-full text-sm">
               <thead>
-                <tr class="text-slate-400 text-xs uppercase tracking-wider bg-slate-900/60">
+                <tr class="text-[var(--text-muted)] text-xs uppercase tracking-wider bg-[var(--bg-secondary)]/60">
                   <th class="px-5 py-3 text-left font-medium">商品名称</th>
                   <th class="px-5 py-3 text-left font-medium">大类</th>
                   <th class="px-5 py-3 text-center font-medium">当前库存</th>
@@ -184,14 +184,14 @@ onMounted(loadStats)
                   <!-- 商品名称 -->
                   <td class="px-5 py-3.5">
                     <div class="flex flex-col gap-0.5">
-                      <span class="text-slate-200 font-medium text-xs leading-snug">{{ p.name }}</span>
-                      <span class="font-mono text-slate-600 text-xs">{{ p.sku_code }}</span>
+                      <span class="text-[var(--text-primary)] font-medium text-xs leading-snug">{{ p.name }}</span>
+                      <span class="font-mono text-[var(--text-muted)] text-xs">{{ p.sku_code }}</span>
                     </div>
                   </td>
 
                   <!-- 大类 -->
                   <td class="px-5 py-3.5">
-                    <span class="inline-flex px-2 py-0.5 bg-slate-800 text-slate-300 text-xs rounded-md border border-slate-700">
+                    <span class="inline-flex px-2 py-0.5 bg-[var(--input-bg)] text-[var(--text-secondary)] text-xs rounded-md border border-[var(--border-default)]">
                       {{ p.category_name }}
                     </span>
                   </td>
@@ -204,11 +204,11 @@ onMounted(loadStats)
                     >
                       {{ p.current_stock }}
                     </span>
-                    <span class="text-slate-600 text-xs ml-1">{{ p.unit }}</span>
+                    <span class="text-[var(--text-muted)] text-xs ml-1">{{ p.unit }}</span>
                   </td>
 
                   <!-- 预警阈值 -->
-                  <td class="px-5 py-3.5 text-center text-slate-400">
+                  <td class="px-5 py-3.5 text-center text-[var(--text-muted)]">
                     {{ p.min_stock }} {{ p.unit }}
                   </td>
 
@@ -220,7 +220,7 @@ onMounted(loadStats)
                     >
                       缺 {{ p.min_stock - p.current_stock }}
                     </span>
-                    <span v-else class="text-slate-700 text-xs">—</span>
+                    <span v-else class="text-[var(--text-muted)] text-xs">—</span>
                   </td>
 
                   <!-- 状态 -->
@@ -248,28 +248,28 @@ onMounted(loadStats)
 
         <!-- ==================== 按大类统计 ==================== -->
         <div>
-          <h3 class="text-sm font-semibold text-slate-300 mb-3">按大类统计</h3>
-          <div class="rounded-xl border border-slate-800 overflow-hidden">
+          <h3 class="text-sm font-semibold text-[var(--text-secondary)] mb-3">按大类统计</h3>
+          <div class="rounded-xl border border-[var(--border-default)] overflow-hidden">
             <table class="w-full text-sm">
               <thead>
-                <tr class="bg-slate-900/80 text-slate-400 text-xs uppercase">
+                <tr class="bg-[var(--header-bg)] text-[var(--text-muted)] text-xs uppercase">
                   <th class="px-5 py-3.5 text-left font-medium">大类</th>
                   <th class="px-5 py-3.5 text-right font-medium">产品数</th>
                   <th class="px-5 py-3.5 text-right font-medium">总库存</th>
                   <th class="px-5 py-3.5 text-right font-medium pr-6">库存价值</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-800/70">
-                <tr v-for="cat in stats.byCategory" :key="cat.name" class="hover:bg-slate-800/30 transition-colors">
-                  <td class="px-5 py-3.5 text-slate-200 font-medium">{{ cat.name }}</td>
-                  <td class="px-5 py-3.5 text-right text-slate-400">{{ cat.count }}</td>
-                  <td class="px-5 py-3.5 text-right text-slate-400">{{ cat.total_stock }}</td>
-                  <td class="px-5 py-3.5 text-right text-slate-400 pr-6">
+              <tbody class="divide-y divide-[var(--border-default)]">
+                <tr v-for="cat in stats.byCategory" :key="cat.name" class="hover:bg-[var(--hover-bg)] transition-colors">
+                  <td class="px-5 py-3.5 text-[var(--text-primary)] font-medium">{{ cat.name }}</td>
+                  <td class="px-5 py-3.5 text-right text-[var(--text-muted)]">{{ cat.count }}</td>
+                  <td class="px-5 py-3.5 text-right text-[var(--text-muted)]">{{ cat.total_stock }}</td>
+                  <td class="px-5 py-3.5 text-right text-[var(--text-muted)] pr-6">
                     ¥{{ Number(cat.total_value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) }}
                   </td>
                 </tr>
                 <tr v-if="stats.byCategory.length === 0">
-                  <td colspan="4" class="px-5 py-8 text-center text-slate-600">暂无数据</td>
+                  <td colspan="4" class="px-5 py-8 text-center text-[var(--text-muted)]">暂无数据</td>
                 </tr>
               </tbody>
             </table>
@@ -278,25 +278,25 @@ onMounted(loadStats)
 
         <!-- ==================== 按库位统计 ==================== -->
         <div v-if="stats.byLocation && stats.byLocation.length > 0">
-          <h3 class="text-sm font-semibold text-slate-300 mb-3">按库位统计</h3>
-          <div class="rounded-xl border border-slate-800 overflow-hidden">
+          <h3 class="text-sm font-semibold text-[var(--text-secondary)] mb-3">按库位统计</h3>
+          <div class="rounded-xl border border-[var(--border-default)] overflow-hidden">
             <table class="w-full text-sm">
               <thead>
-                <tr class="bg-slate-900/80 text-slate-400 text-xs uppercase">
+                <tr class="bg-[var(--header-bg)] text-[var(--text-muted)] text-xs uppercase">
                   <th class="px-5 py-3.5 text-left font-medium">库位编码</th>
                   <th class="px-5 py-3.5 text-right font-medium">产品数</th>
                   <th class="px-5 py-3.5 text-right font-medium pr-6">总库存</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-800/70">
-                <tr v-for="loc in stats.byLocation" :key="loc.location_code" class="hover:bg-slate-800/30 transition-colors">
+              <tbody class="divide-y divide-[var(--border-default)]">
+                <tr v-for="loc in stats.byLocation" :key="loc.location_code" class="hover:bg-[var(--hover-bg)] transition-colors">
                   <td class="px-5 py-3.5">
-                    <span class="font-mono text-xs text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                    <span class="font-mono text-xs text-[var(--text-secondary)] bg-[var(--input-bg)] px-2 py-0.5 rounded border border-[var(--border-default)]">
                       {{ loc.location_code }}
                     </span>
                   </td>
-                  <td class="px-5 py-3.5 text-right text-slate-400">{{ loc.count }}</td>
-                  <td class="px-5 py-3.5 text-right text-slate-400 pr-6">{{ loc.total_stock }}</td>
+                  <td class="px-5 py-3.5 text-right text-[var(--text-muted)]">{{ loc.count }}</td>
+                  <td class="px-5 py-3.5 text-right text-[var(--text-muted)] pr-6">{{ loc.total_stock }}</td>
                 </tr>
               </tbody>
             </table>

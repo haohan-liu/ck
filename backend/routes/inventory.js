@@ -23,8 +23,8 @@ router.post('/in', (req, res) => {
     [newStock, product_id]
   );
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, note, operator) VALUES (?, ?, ?, ?, ?)',
-    [product_id, 'in', qty, note || '', operator || 'system']
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'in', qty, product.current_stock || 0, newStock, note || '', operator || 'system']
   );
 
   res.json({
@@ -68,8 +68,8 @@ router.post('/out', (req, res) => {
     [newStock, product_id]
   );
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, note, operator) VALUES (?, ?, ?, ?, ?)',
-    [product_id, 'out', qty, note || '', operator || 'system']
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'out', qty, current, newStock, note || '', operator || 'system']
   );
 
   res.json({
@@ -102,8 +102,8 @@ router.post('/adjust', (req, res) => {
     [qty, product_id]
   );
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, note, operator) VALUES (?, ?, ?, ?, ?)',
-    [product_id, 'adjust', diff, note || '库存调整', operator || 'system']
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'adjust', diff, current, qty, note || '库存调整', operator || 'system']
   );
 
   res.json({
@@ -115,13 +115,179 @@ router.post('/adjust', (req, res) => {
   });
 });
 
+// 批量入库
+router.post('/batch-in', (req, res) => {
+  const { items, operator } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, error: '缺少有效的数据列表' });
+  }
+
+  // 验证所有项目
+  const errors = [];
+  const validItems = [];
+
+  for (const item of items) {
+    if (!item.product_id || !item.quantity || Number(item.quantity) <= 0 || !Number.isInteger(Number(item.quantity))) {
+      errors.push({ product_id: item.product_id, error: '数量必须为正整数' });
+      continue;
+    }
+
+    const product = getOne('SELECT * FROM products WHERE id = ?', [item.product_id]);
+    if (!product) {
+      errors.push({ product_id: item.product_id, error: '产品不存在' });
+      continue;
+    }
+
+    validItems.push({
+      product_id: item.product_id,
+      product_name: product.name,
+      sku_code: product.sku_code,
+      quantity: Number(item.quantity),
+      note: item.note || '',
+      current_stock: product.current_stock || 0
+    });
+  }
+
+  if (errors.length > 0 && validItems.length === 0) {
+    return res.status(400).json({ success: false, error: '所有项目均无效', errors });
+  }
+
+  // 逐条处理入库
+  const results = [];
+  for (const item of validItems) {
+    const newStock = item.current_stock + item.quantity;
+
+    runQuery(
+      'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newStock, item.product_id]
+    );
+    runInsert(
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [item.product_id, 'in', item.quantity, item.current_stock, newStock, item.note, operator || 'system']
+    );
+
+    results.push({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      sku_code: item.sku_code,
+      quantity: item.quantity,
+      before_stock: item.current_stock,
+      after_stock: newStock
+    });
+  }
+
+  res.json({
+    success: true,
+    message: `批量入库成功，共处理 ${results.length} 条记录`,
+    data: results,
+    errors: errors.length > 0 ? errors : undefined
+  });
+});
+
+// 批量出库（严格校验库存）
+router.post('/batch-out', (req, res) => {
+  const { items, operator } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, error: '缺少有效的数据列表' });
+  }
+
+  // 第一步：验证所有商品的库存是否充足
+  const stockErrors = [];
+  const validItems = [];
+
+  for (const item of items) {
+    if (!item.product_id || !item.quantity || Number(item.quantity) <= 0 || !Number.isInteger(Number(item.quantity))) {
+      stockErrors.push({
+        product_id: item.product_id,
+        error: '数量必须为正整数'
+      });
+      continue;
+    }
+
+    const product = getOne('SELECT * FROM products WHERE id = ?', [item.product_id]);
+    if (!product) {
+      stockErrors.push({
+        product_id: item.product_id,
+        error: '产品不存在'
+      });
+      continue;
+    }
+
+    const current = product.current_stock || 0;
+    const requested = Number(item.quantity);
+
+    if (current < requested) {
+      stockErrors.push({
+        product_id: item.product_id,
+        product_name: product.name,
+        sku_code: product.sku_code,
+        error: `库存不足，当前 ${current} 件，需要 ${requested} 件，差额 ${requested - current} 件`,
+        current_stock: current,
+        requested_quantity: requested
+      });
+    } else {
+      validItems.push({
+        product_id: item.product_id,
+        product_name: product.name,
+        sku_code: product.sku_code,
+        quantity: requested,
+        note: item.note || '',
+        current_stock: current
+      });
+    }
+  }
+
+  // 如果有任何库存不足的错误，直接返回失败
+  if (stockErrors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      error: '部分商品库存不足，无法出库',
+      stockErrors,
+      validItemsCount: validItems.length
+    });
+  }
+
+  // 所有验证通过，执行批量出库
+  const results = [];
+  for (const item of validItems) {
+    const newStock = item.current_stock - item.quantity;
+
+    runQuery(
+      'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newStock, item.product_id]
+    );
+    runInsert(
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [item.product_id, 'out', item.quantity, item.current_stock, newStock, item.note, operator || 'system']
+    );
+
+    results.push({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      sku_code: item.sku_code,
+      quantity: item.quantity,
+      before_stock: item.current_stock,
+      after_stock: newStock
+    });
+  }
+
+  res.json({
+    success: true,
+    message: `批量出库成功，共处理 ${results.length} 条记录`,
+    data: results
+  });
+});
+
 // 查询日志列表
 router.get('/logs', (req, res) => {
   const { product_id, keyword, limit, offset } = req.query;
   let sql = `
-    SELECT l.*, p.name as product_name, p.sku_code, p.unit as product_unit
+    SELECT l.*, p.name as product_name, p.sku_code, p.unit as product_unit, c.name as category_name
     FROM inventory_logs l
     LEFT JOIN products p ON l.product_id = p.id
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE 1=1
   `;
   const params = [];
@@ -140,7 +306,7 @@ router.get('/logs', (req, res) => {
 
   // 先获取总数
   const countSql = sql.replace(
-    'SELECT l.*, p.name as product_name, p.sku_code, p.unit as product_unit',
+    'SELECT l.*, p.name as product_name, p.sku_code, p.unit as product_unit, c.name as category_name',
     'SELECT COUNT(*) as total'
   );
   const countResult = getOne(countSql, params);

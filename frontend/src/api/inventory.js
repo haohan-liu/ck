@@ -12,6 +12,17 @@ export function stockAdjust(data) {
   return api.post('/inventory/adjust', data)
 }
 
+export function batchStockIn(data) {
+  return api.post('/inventory/batch-in', data)
+}
+
+export function batchStockOut(data) {
+  return api.post('/inventory/batch-out', data)
+}
+
 export function getLogs(params) {
   return api.get('/inventory/logs', { params })
 }
+
+// 别名兼容
+export const getInventoryLogs = getLogs

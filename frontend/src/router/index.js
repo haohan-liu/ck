@@ -3,12 +3,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    redirect: '/categories',
+    redirect: '/stats',
   },
   {
-    path: '/categories',
-    name: 'CategoryManage',
-    component: () => import('../views/CategoryManage.vue'),
+    path: '/stats',
+    name: 'Dashboard',
+    component: () => import('../views/Dashboard.vue'),
   },
   {
     path: '/products',
@@ -21,9 +21,15 @@ const routes = [
     component: () => import('../views/InventoryLog.vue'),
   },
   {
-    path: '/stats',
-    name: 'Dashboard',
-    component: () => import('../views/Dashboard.vue'),
+    path: '/categories',
+    name: 'CategoryManage',
+    component: () => import('../views/CategoryManage.vue'),
+  },
+  {
+    path: '/scan',
+    name: 'ScanStation',
+    component: () => import('../views/ScanStation.vue'),
+    meta: { title: '扫码工作站' }
   },
 ]
 
