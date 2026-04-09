@@ -24,5 +24,10 @@ export function getLogs(params) {
   return api.get('/inventory/logs', { params })
 }
 
+// 扫码出库（带运单号绑定）
+export function scanStockOut(data) {
+  return api.post('/inventory/scan-out', data)
+}
+
 // 别名兼容
 export const getInventoryLogs = getLogs

@@ -101,6 +101,8 @@ router.post('/', (req, res) => {
     attempts++;
   }
 
+  const initStock = current_stock || 0;
+
   const result = runInsert(
     `INSERT INTO products (category_id, sku_code, name, attributes, remark, location_code, current_stock, min_stock, unit, cost_price)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -111,7 +113,7 @@ router.post('/', (req, res) => {
       JSON.stringify(attributes || {}),
       remark || '',
       location_code || '',
-      current_stock || 0,
+      initStock,
       min_stock || 0,
       unit || '件',
       cost_price || 0,
@@ -119,6 +121,11 @@ router.post('/', (req, res) => {
   );
 
   if (result.success) {
+    // 新增商品时，无论初始库存是否为 0，都记录一条日志，并保存商品快照
+    runInsert(
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [result.lastId, 'add', initStock, 0, initStock, '新增商品', 'system', name.trim(), category.name]
+    );
     const newProduct = getOne('SELECT * FROM products WHERE id = ?', [result.lastId]);
     res.json({ success: true, data: formatProduct(newProduct), sku_code });
   } else {
@@ -163,7 +170,6 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
-  runQuery('DELETE FROM inventory_logs WHERE product_id = ?', [id]);
   const result = runQuery('DELETE FROM products WHERE id = ?', [id]);
   if (result.success) {
     res.json({ success: true, message: '删除成功' });

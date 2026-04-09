@@ -31,6 +31,12 @@ const routes = [
     component: () => import('../views/ScanStation.vue'),
     meta: { title: '扫码工作站' }
   },
+  {
+    path: '/map',
+    name: 'LocationMap',
+    component: () => import('../views/LocationMap.vue'),
+    meta: { title: '库位地图' }
+  },
 ]
 
 const router = createRouter({
