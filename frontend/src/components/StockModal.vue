@@ -1,14 +1,13 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, inject } from 'vue'
 import { stockIn, stockOut, stockAdjust } from '../api/inventory.js'
+
+const isDark = inject('isDark', ref(true))
 
 const props = defineProps({
   visible: Boolean,
   product: Object,
-  mode: {
-    type: String,
-    default: 'in',
-  },
+  mode: { type: String, default: 'in' },
 })
 const emit = defineEmits(['close', 'success'])
 
@@ -17,6 +16,7 @@ let debounceTimer = null
 
 const quantity = ref(0)
 const note = ref('')
+const trackingNumber = ref('')
 const submitting = ref(false)
 const formError = ref('')
 const successMsg = ref('')
@@ -24,36 +24,34 @@ const successMsg = ref('')
 const MODE_CONFIG = {
   in: {
     title: '入库',
-    action: '入库',
-    color: 'emerald',
+    action: '确认入库',
+    gradient: 'linear-gradient(135deg, #10b981, #059669)',
+    glow: 'rgba(16,185,129,0.3)',
+    textColor: '#10b981',
     hint: '输入入库数量，系统将累加到当前库存',
     quantityHint: '入库数量（正整数）',
   },
   out: {
     title: '出库',
     action: '确认出库',
-    color: 'red',
+    gradient: 'linear-gradient(135deg, #ef4444, #dc2626)',
+    glow: 'rgba(239,68,68,0.3)',
+    textColor: '#ef4444',
     hint: '输入出库数量，系统将从当前库存扣减',
     quantityHint: '出库数量（正整数，不能超过当前库存）',
   },
   adjust: {
     title: '库存调整',
     action: '确认调整',
-    color: 'amber',
+    gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
+    glow: 'rgba(245,158,11,0.3)',
+    textColor: '#f59e0b',
     hint: '直接设置目标库存数量（原库存将被覆盖）',
     quantityHint: '调整后的目标库存（填入最终数量）',
   },
 }
 
 const config = computed(() => MODE_CONFIG[props.mode] || MODE_CONFIG.in)
-
-const colorClasses = computed(() => {
-  const c = config.value.color
-  if (c === 'emerald') return { btn: 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700', border: 'border-emerald-500/50' }
-  if (c === 'red') return { btn: 'bg-red-600 hover:bg-red-500 active:bg-red-700', border: 'border-red-500/50' }
-  if (c === 'amber') return { btn: 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700', border: 'border-amber-500/50' }
-  return { btn: 'bg-emerald-600', border: 'border-emerald-500/50' }
-})
 
 const previewStock = computed(() => {
   if (!props.product) return 0
@@ -89,12 +87,25 @@ const adjustPreview = computed(() => {
   return '库存不变'
 })
 
+const trackingHint = computed(() => {
+  if (props.mode !== 'out' || !trackingNumber.value.trim()) return ''
+  return `将绑定运单号 "${trackingNumber.value.trim()}" 出库`
+})
+
 const isDebouncing = computed(() => !!debounceTimer)
+
+const previewColor = computed(() => {
+  if (successMsg.value) return config.value.textColor
+  if (previewDiff.value > 0) return config.value.textColor
+  if (previewDiff.value < 0) return '#ef4444'
+  return 'inherit'
+})
 
 watch(() => props.visible, (val) => {
   if (val) {
     quantity.value = 0
     note.value = ''
+    trackingNumber.value = ''
     formError.value = ''
     successMsg.value = ''
     clearDebounce()
@@ -102,10 +113,7 @@ watch(() => props.visible, (val) => {
 })
 
 function clearDebounce() {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
-  }
+  if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null }
 }
 
 function validate() {
@@ -128,27 +136,26 @@ function validate() {
 
 async function submit() {
   if (!validate()) return
-
   if (isDebouncing.value) return
 
   submitting.value = true
+  debounceTimer = setTimeout(() => { clearDebounce() }, DEBOUNCE_MS)
 
-  debounceTimer = setTimeout(() => {
-    clearDebounce()
-  }, DEBOUNCE_MS)
-
-  const payload = {
+  const basePayload = {
     product_id: props.product.id,
     quantity: Number(quantity.value),
     note: note.value.trim(),
     operator: 'system',
   }
+  if (props.mode === 'out' && trackingNumber.value.trim()) {
+    basePayload.tracking_number = trackingNumber.value.trim()
+  }
 
   try {
     let res
-    if (props.mode === 'in') res = await stockIn(payload)
-    else if (props.mode === 'out') res = await stockOut(payload)
-    else res = await stockAdjust(payload)
+    if (props.mode === 'in') res = await stockIn(basePayload)
+    else if (props.mode === 'out') res = await stockOut(basePayload)
+    else res = await stockAdjust(basePayload)
 
     successMsg.value = res.data.message || '操作成功'
     emit('success', { mode: props.mode, ...res.data })
@@ -163,134 +170,203 @@ async function submit() {
 <template>
   <Transition name="modal-fade">
     <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <!-- 遮罩层（禁止点击关闭） -->
-      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm cursor-default"></div>
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="$emit('close')"></div>
 
-      <div class="relative w-full max-w-md flex flex-col bg-[var(--modal-bg)] border-[var(--border-strong)] rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
-
-        <!-- 标题栏 -->
-        <div :class="['flex items-center justify-between px-6 py-4 border-b border-[var(--border-default)] flex-shrink-0', colorClasses.border]">
-          <h3 class="text-base font-semibold text-[var(--text-primary)]">
-            {{ config.title }} — {{ product?.name }}
-          </h3>
+      <!-- 弹窗主体 -->
+      <div
+        class="relative w-full max-w-md rounded-2xl overflow-hidden scale-in
+               bg-white dark:bg-slate-900
+               border border-slate-100 dark:border-white/10
+               shadow-xl"
+      >
+        <!-- 标题栏：主题色描边 -->
+        <div
+          class="px-6 py-4 flex items-center justify-between flex-shrink-0"
+          :style="{
+            borderBottom: `1px solid ${config.textColor}30`,
+            background: `${config.textColor}08`
+          }"
+        >
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" :style="{ background: config.gradient + '20' }">
+              <svg v-if="mode === 'in'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ color: config.textColor }">
+                <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+              </svg>
+              <svg v-else-if="mode === 'out'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ color: config.textColor }">
+                <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ color: config.textColor }">
+                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">{{ config.title }}</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{{ product?.name }}</p>
+            </div>
+          </div>
           <button
             @click="$emit('close')"
-            class="w-7 h-7 flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] rounded-md transition-all duration-150 text-lg leading-none cursor-pointer"
+            class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
           >
-            &times;
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
           </button>
         </div>
 
-        <!-- 内容 -->
+        <!-- 内容区 -->
         <div class="px-6 py-5 space-y-5">
 
-          <!-- 当前库存 vs 操作后库存 -->
-          <div class="flex items-center gap-4 p-4 bg-[var(--input-bg)]/60 rounded-xl border border-[var(--border-default)]">
-            <div class="text-center flex-1">
-              <p class="text-xs text-[var(--text-muted)] mb-1">当前库存</p>
-              <p class="text-2xl font-bold text-[var(--text-primary)]">{{ product?.current_stock ?? 0 }}</p>
-              <p class="text-xs text-[var(--text-muted)]">{{ product?.unit }}</p>
-            </div>
-            <div class="w-px h-12 bg-[var(--border-default)]"></div>
-            <div class="text-center flex-1">
-              <p class="text-xs text-[var(--text-muted)] mb-1">操作后库存</p>
-              <p
-                class="text-2xl font-bold"
-                :class="{
-                  'text-emerald-400': successMsg || (previewDiff > 0),
-                  'text-red-400': previewDiff < 0 && !successMsg,
-                  'text-[var(--text-primary)]': previewDiff === 0 && !successMsg,
-                }"
-              >
-                {{ previewStock }}
-              </p>
-              <p class="text-xs text-[var(--text-muted)]">{{ product?.unit }}</p>
+          <!-- 库存预览卡片 -->
+          <div class="rounded-xl p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5">
+            <div class="flex items-center gap-4">
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">当前库存</p>
+                <p class="text-2xl font-bold text-slate-900 dark:text-white leading-none">{{ product?.current_stock ?? 0 }}</p>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">{{ product?.unit || '件' }}</p>
+              </div>
+              <div class="flex flex-col items-center">
+                <div class="w-px h-5 bg-slate-200 dark:bg-white/10 mb-1"></div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300 dark:text-slate-600">
+                  <path d="m9 18 6-6-6-6"/>
+                </svg>
+                <div class="w-px h-5 bg-slate-200 dark:bg-white/10 mt-1"></div>
+              </div>
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">操作后库存</p>
+                <p class="text-2xl font-bold leading-none" :style="{ color: previewColor }">
+                  {{ previewStock }}
+                </p>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">{{ product?.unit || '件' }}</p>
+              </div>
             </div>
           </div>
 
-          <p class="text-xs text-[var(--text-muted)] -mt-1">{{ config.hint }}</p>
+          <p class="text-xs text-slate-400 dark:text-slate-500 -mt-1">{{ config.hint }}</p>
 
-          <!-- 数量输入 -->
+          <!-- 数量输入 — Apple 风格大 Input -->
           <div>
-            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">
-              {{ config.quantityHint }} <span class="text-red-400">*</span>
+            <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              {{ config.quantityHint }} <span class="text-rose-500">*</span>
             </label>
-            <div class="relative">
-              <input
-                v-model.number="quantity"
-                type="number"
-                min="1"
-                :max="mode === 'out' ? product?.current_stock : undefined"
-                placeholder="0"
-                class="w-full px-3.5 py-3 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-xl text-[var(--text-primary)] text-center font-semibold focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                @keyup.enter="submit"
-              />
-            </div>
-            <p v-if="outOverWarning" class="text-xs text-red-400 mt-1.5 flex items-center gap-1">
-              <span class="text-base shrink-0">!</span>
+            <input
+              v-model.number="quantity"
+              type="number"
+              min="1"
+              :max="mode === 'out' ? product?.current_stock : undefined"
+              placeholder="0"
+              class="w-full py-4 px-6 rounded-xl text-xl text-center font-bold
+                     bg-slate-50 dark:bg-slate-800
+                     border-2 border-transparent
+                     text-slate-900 dark:text-white
+                     placeholder-slate-300 dark:placeholder-slate-600
+                     focus:outline-none transition-all"
+              :class="formError ? 'border-rose-400 dark:border-rose-500' : 'focus:border-indigo-500'"
+              @keyup.enter="submit"
+            />
+            <p v-if="outOverWarning" class="text-xs text-rose-500 mt-1.5 flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+              </svg>
               {{ outOverWarning }}
             </p>
-            <p v-if="mode === 'adjust' && quantity > 0" class="text-xs text-amber-400 mt-1.5">
-              {{ adjustPreview }}
-            </p>
+            <p v-if="mode === 'adjust' && quantity > 0" class="text-xs mt-1.5" style="color: var(--warning);">{{ adjustPreview }}</p>
           </div>
+
+          <!-- 运单号（仅出库） -->
+          <Transition name="field-expand">
+            <div v-if="mode === 'out'">
+              <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                运单号
+                <span class="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">选填，绑定后可在日志中追溯</span>
+              </label>
+              <div class="relative">
+                <div class="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400">
+                    <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
+                  </svg>
+                </div>
+                <input
+                  v-model="trackingNumber"
+                  type="text"
+                  placeholder="请输入或扫码运单号"
+                  class="w-full pl-11 pr-4 py-3 rounded-xl text-sm text-slate-900 dark:text-white
+                         bg-slate-50 dark:bg-slate-800 border-2 border-transparent
+                         placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-all"
+                />
+              </div>
+              <p v-if="trackingHint" class="text-xs mt-1.5 flex items-center gap-1" style="color: var(--info);">
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                </svg>
+                {{ trackingHint }}
+              </p>
+            </div>
+          </Transition>
 
           <!-- 备注 -->
           <div>
-            <label class="block text-sm font-medium text-[var(--text-secondary)] mb-1.5">备注说明</label>
+            <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">备注说明</label>
             <textarea
               v-model="note"
               rows="2"
               placeholder="选填，如：供应商送货 / 客户订单 / 盘点修正"
-              class="w-full px-3.5 py-2.5 bg-[var(--input-bg)] border-[var(--input-border)] rounded-lg text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-glow)] transition-all duration-200 resize-none leading-relaxed"
+              class="w-full px-4 py-2.5 rounded-xl text-sm text-slate-900 dark:text-white
+                     bg-slate-50 dark:bg-slate-800 border-2 border-transparent
+                     placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-all resize-none leading-relaxed"
             ></textarea>
           </div>
 
-          <!-- 错误提示 -->
-          <div
-            v-if="formError"
-            class="flex items-center gap-2 px-3.5 py-2.5 bg-red-950/50 border border-red-900/60 rounded-lg text-sm text-red-300"
-          >
-            <span class="text-red-400 text-base shrink-0">!</span>
+          <!-- 错误 -->
+          <div v-if="formError" class="flex items-start gap-2.5 p-3.5 rounded-xl text-sm bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-300">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 shrink-0 mt-0.5">
+              <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+            </svg>
             {{ formError }}
           </div>
 
-          <!-- 成功提示 -->
-          <div
-            v-if="successMsg"
-            class="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-950/50 border border-emerald-900/60 rounded-lg text-sm text-emerald-300"
-          >
-            <span class="text-emerald-400 text-base shrink-0">&#10003;</span>
+          <!-- 成功 -->
+          <div v-if="successMsg" class="flex items-center gap-2.5 p-3.5 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-300">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>
+            </svg>
             {{ successMsg }}
           </div>
         </div>
 
-        <!-- 底部 -->
-        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--border-default)] bg-[var(--modal-bg)]/80 flex-shrink-0">
+        <!-- 底部按钮 -->
+        <div class="px-6 py-4 border-t border-slate-100 dark:border-white/5 flex items-center gap-3 flex-shrink-0">
           <button
             @click="$emit('close')"
-            class="px-4 py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] border border-[var(--border-default)] hover:border-[var(--border-strong)] rounded-lg transition-all duration-150 cursor-pointer"
+            class="flex-1 py-2.5 text-sm font-medium rounded-xl
+                   bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300
+                   border border-slate-200 dark:border-white/10
+                   hover:bg-slate-200 dark:hover:bg-white/10
+                   active:scale-95 transition-all cursor-pointer"
           >
             关闭
           </button>
           <button
             @click="submit"
             :disabled="submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0"
-            :class="[
-              'px-5 py-2 text-sm text-white rounded-lg font-medium transition-all duration-150 cursor-pointer',
-              colorClasses.btn,
-              (submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0)
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-            ]"
+            class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed active:scale-[0.98]"
+            :style="(submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0) ? '' : `background: ${config.gradient}; box-shadow: 0 4px 14px ${config.glow};`"
           >
-            {{
-              submitting
-                ? '处理中…'
-                : isDebouncing
-                  ? `${DEBOUNCE_MS / 1000}s 防抖中…`
-                  : config.action
-            }}
+            <span v-if="submitting" class="flex items-center justify-center gap-2">
+              <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              处理中...
+            </span>
+            <span v-else-if="isDebouncing" class="flex items-center justify-center gap-1.5">
+              <svg class="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              {{ DEBOUNCE_MS / 1000 }}s 防抖中…
+            </span>
+            <span v-else>{{ config.action }}</span>
           </button>
         </div>
       </div>
@@ -299,22 +375,18 @@ async function submit() {
 </template>
 
 <style scoped>
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
-}
+.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.25s ease; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 
-/* 隐藏 number 输入框的浏览器原生箭头 */
-input[type="number"] {
-  -moz-appearance: textfield;
-}
+.scale-in { animation: scale-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+@keyframes scale-in { 0% { opacity: 0; transform: scale(0.94); } 100% { opacity: 1; transform: scale(1); } }
+
+.field-expand-enter-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
+.field-expand-leave-active { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
+.field-expand-enter-from, .field-expand-leave-to { opacity: 0; max-height: 0; margin-top: 0; }
+.field-expand-enter-to, .field-expand-leave-from { opacity: 1; max-height: 120px; }
+
+input[type="number"] { -moz-appearance: textfield; }
 input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 </style>

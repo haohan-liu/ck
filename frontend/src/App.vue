@@ -1,20 +1,21 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue'
 import { useRoute } from 'vue-router'
-import { MyButton } from './components/ui/index.js'
 
 const route = useRoute()
 
 // ======================== 主题状态 ========================
-// 从 localStorage 读取保存的主题，避免刷新后恢复默认
 const isDark = ref(localStorage.getItem('theme') !== 'light')
 
 const toggleTheme = () => {
   isDark.value = !isDark.value
 }
 watch(isDark, (val) => {
-  document.documentElement.setAttribute('data-theme', val ? 'dark' : 'light')
-  localStorage.setItem('theme', val ? 'dark' : 'light')
+  const theme = val ? 'dark' : 'light'
+  // 关键：同时设置 html 和 body 上的 data-theme，确保 CSS 变量系统正确响应
+  document.documentElement.setAttribute('data-theme', theme)
+  document.body.setAttribute('data-theme', theme)
+  localStorage.setItem('theme', theme)
 }, { immediate: true })
 provide('isDark', isDark)
 
@@ -23,280 +24,389 @@ const drawerOpen = ref(false)
 function openDrawer()  { drawerOpen.value = true }
 function closeDrawer() { drawerOpen.value = false }
 
-// ======================== 导航项定义 ========================
+// ======================== 导航项定义（Lucide SVG 内联） ========================
 const navItems = [
-  { name: '统计面板', path: '/stats', icon: '▣' },
-  { name: '商品管理', path: '/products', icon: '◈' },
-  { name: '库存日志', path: '/inventory', icon: '◉' },
-  { name: '扫码入库', path: '/scan', icon: '⌨' },
-  { name: '库位地图', path: '/map', icon: '▦' },
-  { name: '产品大类', path: '/categories', icon: '☰' },
+  {
+    name: '统计面板',
+    path: '/stats',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`
+  },
+  {
+    name: '商品管理',
+    path: '/products',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`
+  },
+  {
+    name: '库存日志',
+    path: '/inventory',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>`
+  },
+  {
+    name: '扫码入库',
+    path: '/scan',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="m9 11 5 5"/><path d="m14 11 5 5"/><path d="m14 11-5 5"/><path d="m9 16 5-5"/><rect x="6" y="6" width="4" height="4" rx="1"/></svg>`
+  },
+  {
+    name: '库位地图',
+    path: '/map',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15"/><path d="m15 6v15"/></svg>`
+  },
+  {
+    name: '产品大类',
+    path: '/categories',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>`
+  },
 ]
 
 function isActive(path) {
   return route.path === path
 }
-
-function navigateTo(path) {
-  closeDrawer()
-}
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-[var(--bg-primary)]" :data-theme="isDark ? 'dark' : 'light'">
+  <!-- 全屏背景层 -->
+  <div
+    class="h-screen overflow-hidden flex"
+    :data-theme="isDark ? 'dark' : 'light'"
+  >
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- PC 端 — 悬浮式卡片布局 (≥1024px)                         -->
+    <!-- 彻底放弃贴边侧边栏，使用 m-4 悬浮卡片结构               -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="hidden lg:flex w-full h-full p-4 gap-4">
 
-    <!-- ================================================ -->
-    <!-- PC 端侧边栏（桌面宽度 >= 1024px 固定显示） -->
-    <!-- ================================================ -->
-    <aside class="hidden lg:flex w-56 flex-shrink-0 flex-col border-r border-[var(--border-default)] bg-[var(--bg-secondary)]">
-      <!-- Logo 区 -->
-      <div class="px-5 py-6 border-b border-[var(--border-default)]">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-sm font-bold shrink-0">
-            档
-          </div>
-          <div class="min-w-0">
-            <h1 class="text-sm font-semibold text-[var(--text-primary)] truncate tracking-wide leading-snug">
-              档把库存系统
-            </h1>
-            <p class="text-xs text-[var(--text-muted)] mt-0.5">auto-parts-inventory</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 导航菜单 -->
-      <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <router-link
-          v-for="item in navItems"
-          :key="item.path"
-          :to="item.path"
-          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 group"
-          :class="
-            isActive(item.path)
-              ? 'bg-[var(--accent-bg)] text-[var(--accent)] font-medium border border-[var(--accent)]/30 shadow-sm shadow-[var(--accent)]/10'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] border border-transparent'
-          "
-        >
-          <span class="text-base leading-none shrink-0 transition-transform duration-150"
-            :class="isActive(item.path) ? 'scale-110' : 'group-hover:scale-105'">
-            {{ item.icon }}
-          </span>
-          <span class="truncate">{{ item.name }}</span>
-          <!-- 激活态小圆点 -->
-          <span
-            v-if="isActive(item.path)"
-            class="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0"
-          ></span>
-        </router-link>
-      </nav>
-
-      <!-- 底部：主题切换 + 版权 -->
-      <div class="px-3 pb-4 space-y-1">
-        <!-- 主题切换 -->
-        <button
-          @click="toggleTheme"
-          class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] transition-all duration-150 border border-transparent hover:border-[var(--border-default)]"
-        >
-          <div class="flex items-center gap-3">
-            <!-- 太阳图标（暗色模式切换到亮色） -->
-            <svg v-if="isDark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-            </svg>
-            <!-- 月亮图标（亮色模式切换到暗色） -->
-            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-            </svg>
-            <span>{{ isDark ? '亮色模式' : '暗色模式' }}</span>
-          </div>
-          <span class="text-xs opacity-60">{{ isDark ? '☀️' : '🌙' }}</span>
-        </button>
-
-        <!-- 版权 -->
-        <div class="px-3 pt-3 border-t border-[var(--border-default)] text-xs text-[var(--text-muted)]">
-          &copy; 2026 跨境汽配小件
-        </div>
-      </div>
-    </aside>
-
-    <!-- ================================================ -->
-    <!-- 移动端布局（< 1024px） -->
-    <!-- ================================================ -->
-    <div class="flex flex-col flex-1 min-w-0 lg:hidden">
-
-      <!-- 顶部栏 -->
-      <header class="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
+      <!-- 侧边栏 — 悬浮卡片，四周留白 m-0 (因为外层 p-4)，独立 rounded-2xl -->
+      <aside
+        class="w-60 h-full flex flex-col shrink-0
+               rounded-2xl overflow-hidden
+               bg-white/70 dark:bg-slate-900/50
+               backdrop-blur-xl
+               border border-slate-200/50 dark:border-white/5
+               shadow-[0_8px_30px_rgb(0,0,0,0.04)]
+               dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]"
+      >
         <!-- Logo -->
-        <div class="flex items-center gap-2">
-          <div class="w-7 h-7 rounded-md bg-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold">档</div>
-          <span class="text-sm font-semibold text-[var(--text-primary)]">档把库存</span>
+        <div class="px-6 py-6 border-b border-slate-100 dark:border-white/5 flex-shrink-0">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0
+                     bg-gradient-to-br from-indigo-500 to-indigo-600
+                     shadow-lg shadow-indigo-500/25"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <h1 class="text-sm font-bold text-slate-900 dark:text-white truncate tracking-tight leading-snug">
+                档把库存系统
+              </h1>
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 font-mono">inventory</p>
+            </div>
+          </div>
         </div>
-        <!-- 操作按钮 -->
-        <div class="flex items-center gap-1">
+
+        <!-- 导航 -->
+        <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <router-link
+            v-for="item in navItems"
+            :key="item.path"
+            :to="item.path"
+            class="group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 overflow-hidden"
+            :class="
+              isActive(item.path)
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+            "
+          >
+            <!-- 激活左侧小指示块 -->
+            <span
+              v-if="isActive(item.path)"
+              class="absolute right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/60"
+            ></span>
+            <span
+              class="shrink-0 transition-transform duration-200"
+              :class="isActive(item.path) ? 'scale-110' : 'group-hover:scale-105'"
+              v-html="item.icon"
+            ></span>
+            {{ item.name }}
+          </router-link>
+        </nav>
+
+        <!-- 底部：主题切换 + 版权 -->
+        <div class="px-3 pb-5 pt-2 space-y-1 flex-shrink-0">
+          <div class="h-px bg-slate-100 dark:bg-white/5 mx-1 mb-3"></div>
+
           <!-- 主题切换 -->
           <button
             @click="toggleTheme"
-            class="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] transition-colors cursor-pointer"
-            :title="isDark ? '切换亮色模式' : '切换暗色模式'"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm
+                   text-slate-600 dark:text-slate-400
+                   hover:bg-slate-100 dark:hover:bg-white/5
+                   hover:text-slate-900 dark:hover:text-white
+                   transition-all duration-200 cursor-pointer"
           >
-            <svg v-if="isDark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            <!-- 太阳（暗→亮） -->
+            <svg v-if="isDark"
+              xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              class="text-amber-500 shrink-0">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2"/><path d="M12 20v2"/>
+              <path d="m4.93 4.93 1.41 1.41"/>
+              <path d="m17.66 17.66 1.41 1.41"/>
+              <path d="M2 12h2"/><path d="M20 12h2"/>
+              <path d="m6.34 17.66-1.41 1.41"/>
+              <path d="m19.07 4.93-1.41 1.41"/>
             </svg>
-            <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            <!-- 月亮（亮→暗） -->
+            <svg v-else
+              xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              class="text-indigo-500 shrink-0">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+            </svg>
+            <span class="flex-1 text-left">{{ isDark ? '亮色模式' : '暗色模式' }}</span>
+            <!-- 滑块 -->
+            <div class="w-9 h-5 rounded-full p-0.5 bg-slate-200 dark:bg-indigo-900/50 transition-all duration-300">
+              <div
+                class="w-4 h-4 rounded-full bg-white dark:bg-indigo-400 shadow-sm transition-all duration-300"
+                :style="{ marginLeft: isDark ? '16px' : '0' }"
+              ></div>
+            </div>
+          </button>
+
+          <div class="pt-3 text-center text-xs text-slate-400 dark:text-slate-500">
+            &copy; 2026 跨境汽配小件
+          </div>
+        </div>
+      </aside>
+
+      <!-- 主内容区 — 悬浮卡片 -->
+      <main class="flex-1 min-w-0 h-full rounded-2xl overflow-hidden
+                   bg-white/70 dark:bg-slate-900/50
+                   backdrop-blur-xl
+                   border border-slate-200/50 dark:border-white/5
+                   shadow-[0_8px_30px_rgb(0,0,0,0.04)]
+                   dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
+        <router-view />
+      </main>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- 移动端布局 (<1024px) — 顶部栏 + 底部 Tab + 主内容       -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="flex flex-col flex-1 min-w-0 lg:hidden">
+
+      <!-- 顶部栏 -->
+      <header
+        class="flex-shrink-0 flex items-center justify-between h-14 px-4
+               bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
+               border-b border-slate-100 dark:border-white/5"
+      >
+        <!-- Logo -->
+        <div class="flex items-center gap-2.5">
+          <div
+            class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
+                   bg-gradient-to-br from-indigo-500 to-indigo-600
+                   shadow-md shadow-indigo-500/25"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            </svg>
+          </div>
+          <span class="text-sm font-bold text-slate-900 dark:text-white">档把库存</span>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="flex items-center gap-1">
+          <button
+            @click="toggleTheme"
+            class="w-9 h-9 flex items-center justify-center rounded-xl
+                   text-slate-500 dark:text-slate-400
+                   hover:bg-slate-100 dark:hover:bg-white/5
+                   transition-all duration-200 cursor-pointer active:scale-95"
+          >
+            <svg v-if="isDark"
+              xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2"/><path d="M12 20v2"/>
+              <path d="m4.93 4.93 1.41 1.41"/>
+              <path d="m17.66 17.66 1.41 1.41"/>
+              <path d="M2 12h2"/><path d="M20 12h2"/>
+              <path d="m6.34 17.66-1.41 1.41"/>
+              <path d="m19.07 4.93-1.41 1.41"/>
+            </svg>
+            <svg v-else
+              xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
             </svg>
           </button>
-          <!-- 汉堡菜单 -->
           <button
             @click="openDrawer"
-            class="w-9 h-9 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] transition-colors cursor-pointer"
-            title="导航菜单"
+            class="w-9 h-9 flex items-center justify-center rounded-xl
+                   text-slate-500 dark:text-slate-400
+                   hover:bg-slate-100 dark:hover:bg-white/5
+                   transition-all duration-200 cursor-pointer active:scale-95"
           >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" x2="20" y1="12" y2="12"/>
+              <line x1="4" x2="20" y1="6" y2="6"/>
+              <line x1="4" x2="20" y1="18" y2="18"/>
             </svg>
           </button>
         </div>
       </header>
 
-      <!-- 主内容区 -->
+      <!-- 主内容 -->
       <main class="flex-1 overflow-auto">
         <router-view />
       </main>
 
-      <!-- 底部导航（手机固定底部） -->
-      <nav class="flex-shrink-0 flex items-center bg-[var(--bg-secondary)] border-t border-[var(--border-default)] pb-safe">
+      <!-- 底部 Tab -->
+      <nav
+        class="flex-shrink-0 flex items-stretch
+               bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
+               border-t border-slate-100 dark:border-white/5
+               pb-safe"
+      >
         <router-link
           v-for="item in navItems"
           :key="item.path"
           :to="item.path"
-          class="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] transition-colors duration-150 relative"
+          class="relative flex-1 flex flex-col items-center justify-center py-2 gap-0.5
+                 text-[10px] transition-all duration-200 cursor-pointer select-none"
           :class="
             isActive(item.path)
-              ? 'text-[var(--accent)]'
-              : 'text-[var(--text-muted)]'
+              ? 'text-indigo-600 dark:text-indigo-400'
+              : 'text-slate-400 dark:text-slate-500'
           "
         >
-          <span class="text-base leading-none">{{ item.icon }}</span>
-          <span class="leading-none">{{ item.name }}</span>
-          <!-- 激活下划线指示器 -->
-          <span
+          <div
             v-if="isActive(item.path)"
-            class="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full bg-[var(--accent)]"
-          ></span>
+            class="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-b-full"
+            style="background: linear-gradient(90deg, #6366f1, #818cf8);"
+          ></div>
+          <span class="transition-transform duration-150" :class="isActive(item.path) ? 'scale-110' : ''" v-html="item.icon"></span>
+          <span class="font-medium leading-none">{{ item.name }}</span>
         </router-link>
       </nav>
     </div>
 
-    <!-- ================================================ -->
-    <!-- PC 端主内容区 -->
-    <!-- ================================================ -->
-    <main class="flex-1 flex-col overflow-auto hidden lg:flex">
-      <router-view />
-    </main>
-
-    <!-- ================================================ -->
-    <!-- 移动端抽屉菜单 -->
-    <!-- ================================================ -->
-    <Transition name="drawer-fade">
-      <div
-        v-if="drawerOpen"
-        class="fixed inset-0 z-50 lg:hidden"
-      >
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- 移动端抽屉 — 右侧滑出，悬浮风格                        -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <Transition name="drawer-slide">
+      <div v-if="drawerOpen" class="fixed inset-0 z-50 lg:hidden">
         <!-- 遮罩 -->
         <div
-          class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          class="absolute inset-0 bg-black/40 backdrop-blur-sm"
           @click="closeDrawer"
         ></div>
-
-        <!-- 抽屉 -->
-        <div class="absolute right-0 top-0 h-full w-64 bg-[var(--bg-secondary)] border-l border-[var(--border-default)] shadow-2xl shadow-black/50 flex flex-col">
-          <!-- 抽屉头部 -->
-          <div class="flex items-center justify-between px-5 py-5 border-b border-[var(--border-default)]">
+        <!-- 面板 -->
+        <div
+          class="absolute right-0 top-0 h-full w-[280px]
+                 rounded-l-2xl overflow-hidden
+                 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl
+                 border-l border-slate-200/50 dark:border-white/5
+                 shadow-[-12px_0_60px_rgba(0,0,0,0.15)]"
+        >
+          <div class="px-5 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-7 h-7 rounded-md bg-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold">档</div>
-              <span class="text-sm font-semibold text-[var(--text-primary)]">导航菜单</span>
+              <div class="w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-md">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+              </div>
+              <span class="text-sm font-bold text-slate-900 dark:text-white">导航菜单</span>
             </div>
             <button
               @click="closeDrawer"
-              class="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] cursor-pointer"
+              class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
             >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
               </svg>
             </button>
           </div>
 
-          <!-- 导航列表 -->
-          <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          <nav class="px-3 py-4 space-y-1 overflow-y-auto">
             <router-link
               v-for="item in navItems"
               :key="item.path"
               :to="item.path"
               @click="closeDrawer"
-              class="flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-all duration-150"
+              class="group flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all duration-200"
               :class="
                 isActive(item.path)
-                  ? 'bg-[var(--accent-bg)] text-[var(--accent)] font-medium border border-[var(--accent)]/30'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] border border-transparent'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
               "
             >
-              <span class="text-base leading-none">{{ item.icon }}</span>
+              <span class="shrink-0" v-html="item.icon"></span>
               {{ item.name }}
             </router-link>
           </nav>
 
-          <!-- 抽屉底部 -->
-          <div class="px-5 py-5 border-t border-[var(--border-default)] space-y-3">
+          <div class="px-5 py-5 border-t border-slate-100 dark:border-white/5 space-y-2">
             <button
               @click="toggleTheme(); closeDrawer()"
-              class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--row-hover)] transition-colors border border-transparent hover:border-[var(--border-default)] cursor-pointer"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm
+                     text-slate-600 dark:text-slate-400
+                     hover:bg-slate-100 dark:hover:bg-white/5
+                     hover:text-slate-900 dark:hover:text-white
+                     transition-all duration-200 cursor-pointer"
             >
-              <div class="flex items-center gap-3">
-                <svg v-if="isDark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                </svg>
-                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-                </svg>
-                {{ isDark ? '亮色模式' : '暗色模式' }}
-              </div>
-              <span class="text-xs opacity-60">{{ isDark ? '☀️' : '🌙' }}</span>
+              <svg v-if="isDark"
+                xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M12 2v2"/><path d="M12 20v2"/>
+                <path d="m4.93 4.93 1.41 1.41"/>
+                <path d="m17.66 17.66 1.41 1.41"/>
+                <path d="M2 12h2"/><path d="M20 12h2"/>
+                <path d="m6.34 17.66-1.41 1.41"/>
+                <path d="m19.07 4.93-1.41 1.41"/>
+              </svg>
+              <svg v-else
+                xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+              </svg>
+              {{ isDark ? '亮色模式' : '暗色模式' }}
             </button>
-            <div class="text-xs text-[var(--text-muted)] text-center pt-1">
+            <div class="pt-2 text-center text-xs text-slate-400 dark:text-slate-500">
               &copy; 2026 跨境汽配小件
             </div>
           </div>
         </div>
       </div>
     </Transition>
-
   </div>
 </template>
 
 <style scoped>
-/* 抽屉过渡动画 */
-.drawer-fade-enter-active,
-.drawer-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.drawer-fade-enter-from,
-.drawer-fade-leave-to {
-  opacity: 0;
-}
-
-.drawer-fade-enter-active .absolute.right-0,
-.drawer-fade-leave-active .absolute.right-0 {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.drawer-fade-enter-from .absolute.right-0 {
-  transform: translateX(100%);
-}
-.drawer-fade-leave-to .absolute.right-0 {
-  transform: translateX(100%);
-}
-
-/* 安全区域适配（刘海屏底部） */
 .pb-safe {
   padding-bottom: max(6px, env(safe-area-inset-bottom));
+}
+
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: opacity 0.25s ease;
+}
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  opacity: 0;
+}
+.drawer-slide-enter-active > div:last-child,
+.drawer-slide-leave-active > div:last-child {
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.drawer-slide-enter-from > div:last-child {
+  transform: translateX(100%);
+}
+.drawer-slide-leave-to > div:last-child {
+  transform: translateX(100%);
 }
 </style>

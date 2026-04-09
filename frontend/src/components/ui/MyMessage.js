@@ -13,15 +13,15 @@
  *   $msg.success('操作成功')
  */
 
-import { createApp } from 'vue'
+import { createApp, defineComponent, h } from 'vue'
 
 // ======================== Toast 组件（无 UI 框架，纯 CSS） ========================
 
-const ToastComponent = {
+const ToastComponent = defineComponent({
   name: 'MyMessageToast',
   props: {
     id: { type: Number, required: true },
-    type: { type: String, default: 'info' }, // info | success | warning | error
+    type: { type: String, default: 'info' },
     message: { type: String, required: true },
     duration: { type: Number, default: 3000 },
   },
@@ -68,30 +68,31 @@ const ToastComponent = {
   beforeUnmount() {
     if (this._timer) clearTimeout(this._timer)
   },
-  template: `
-    <div class="flex items-start gap-3 px-4 py-3 rounded-xl border shadow-xl shadow-black/40 backdrop-blur-sm" :class="styleClass">
-      <span :class="iconColorClass" v-html="iconSvg"></span>
-      <p class="flex-1 text-sm leading-relaxed break-words">{{ message }}</p>
-      <button
-        @click="$emit('close')"
-        class="shrink-0 w-5 h-5 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity cursor-pointer -mt-0.5"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-      </button>
-    </div>
-  `,
-}
+  render() {
+    return h('div', {
+      class: `flex items-start gap-3 px-4 py-3 rounded-xl border shadow-xl shadow-black/40 backdrop-blur-sm ${this.styleClass}`
+    }, [
+      h('span', { class: this.iconColorClass, innerHTML: this.iconSvg }),
+      h('p', { class: 'flex-1 text-sm leading-relaxed break-words' }, this.message),
+      h('button', {
+        class: 'shrink-0 w-5 h-5 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity cursor-pointer -mt-0.5',
+        onClick: () => this.$emit('close'),
+      }, [
+        h('svg', { class: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
+          h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2.5', d: 'M6 18L18 6M6 6l12 12' })
+        ])
+      ])
+    ])
+  },
+})
 
 // ======================== Toast 容器 & 全局 API ========================
 
 let toastApp = null
 let container = null
-let toastList = [] // 当前显示的 Toast 实例列表
+let toastList = []
 let toastIdCounter = 0
 
-// 确保容器已挂载
 function ensureContainer() {
   if (!container) {
     container = document.createElement('div')
@@ -110,7 +111,6 @@ function ensureContainer() {
     `
     document.body.appendChild(container)
 
-    // 创建独立 Vue 实例用于 Toast 渲染
     toastApp = createApp({})
     toastApp.mount(container)
   }
@@ -119,8 +119,7 @@ function ensureContainer() {
 function removeToast(id) {
   const idx = toastList.findIndex(t => t.id === id)
   if (idx !== -1) {
-    const [toast] = toastList.splice(idx, 1)
-    // 重新渲染列表
+    toastList.splice(idx, 1)
     renderToasts()
   }
 }
@@ -128,24 +127,51 @@ function removeToast(id) {
 function renderToasts() {
   if (!toastApp) return
 
-  // 清除旧组件
   const existing = container.querySelectorAll('[data-toast-id]')
   existing.forEach(el => el.remove())
 
-  toastList.forEach(toast => {
-    const wrapper = document.createElement('div')
-    wrapper.setAttribute('data-toast-id', toast.id)
-    wrapper.style.cssText = `
-      pointer-events: auto;
-      animation: toast-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    `
-    container.appendChild(wrapper)
+  // 每次重新挂载整个列表：销毁旧实例 → 创建新实例
+  const oldRoot = container.querySelector('[data-toast-root]')
+  if (oldRoot) oldRoot.remove()
 
-    const vm = toastApp.mount(wrapper)
-    vm.$data = toast
-    vm.$options.emits = { close: null }
-    vm.$on('close', () => removeToast(toast.id))
+  if (toastList.length === 0) return
+
+  const root = document.createElement('div')
+  root.setAttribute('data-toast-root', 'true')
+  container.appendChild(root)
+
+  const App = defineComponent({
+    setup() {
+      const vnodes = toastList.map(toast => {
+        let closeFn = null
+        const proxy = new Proxy({}, {
+          get(_, key) {
+            if (key === '$on') return (evt, cb) => { if (evt === 'close') closeFn = cb }
+            if (key === '$emit') return (evt) => { if (evt === 'close' && closeFn) closeFn() }
+            if (key === '$data') return toast
+            if (key === '$el') return undefined
+            if (key in toast) return toast[key]
+            if (key === 'config') return { get textColor() { return '#10b981' } }
+            return undefined
+          },
+          set() { return true },
+          has() { return true },
+        })
+        return h(ToastComponent, {
+          key: toast.id,
+          id: toast.id,
+          type: toast.type,
+          message: toast.message,
+          duration: toast.duration,
+          onClose: () => removeToast(toast.id),
+        })
+      })
+      return () => vnodes
+    },
   })
+
+  const listApp = createApp(App)
+  listApp.mount(root)
 }
 
 function show(message, type = 'info', duration = 3000) {
@@ -154,7 +180,6 @@ function show(message, type = 'info', duration = 3000) {
   const id = ++toastIdCounter
   toastList.push({ id, type, message, duration })
 
-  // 延迟挂载，确保容器已准备好
   setTimeout(() => renderToasts(), 0)
 
   return id
@@ -164,7 +189,6 @@ function hide(id) {
   removeToast(id)
 }
 
-// 添加 CSS 动画（仅首次）
 function injectStyles() {
   if (document.getElementById('my-toast-styles')) return
   const style = document.createElement('style')
@@ -178,8 +202,6 @@ function injectStyles() {
   document.head.appendChild(style)
 }
 
-// ======================== 对外暴露的 API ========================
-
 const MyMessage = {
   success: (msg, duration) => show(msg, 'success', duration ?? 3000),
   error:   (msg, duration) => show(msg, 'error',   duration ?? 4000),
@@ -189,13 +211,10 @@ const MyMessage = {
   show,
 }
 
-// 自动注入动画样式
 injectStyles()
 
 export default MyMessage
 
-// ======================== Vue 插件模式（可选） ========================
-// 如需在 Vue 中以 app.use(MyMessage) 方式注册：
 export const MyMessagePlugin = {
   install(app) {
     app.config.globalProperties.$msg = MyMessage

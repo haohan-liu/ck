@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { getAll, getOne, runInsert, runQuery, saveDatabase } = require('../db');
 
-// ======================== 工具函数 ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 工具函数
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * 安全获取库存数值（避免 undefined / null 导致 NaN）
@@ -12,7 +14,9 @@ function safeStock(value) {
   return isNaN(n) ? 0 : Math.max(0, Math.floor(n));
 }
 
-// ======================== 入库 ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 入库
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.post('/in', (req, res) => {
   const { product_id, quantity, note, operator } = req.body;
@@ -21,10 +25,11 @@ router.post('/in', (req, res) => {
     return res.status(400).json({ success: false, error: '参数错误：数量必须为正整数' });
   }
 
-  const product = getOne('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?', [product_id]);
-  if (!product) {
-    return res.status(404).json({ success: false, error: '产品不存在' });
-  }
+  const product = getOne(
+    'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+    [product_id]
+  );
+  if (!product) return res.status(404).json({ success: false, error: '产品不存在' });
 
   const qty = Number(quantity);
   const before = safeStock(product.current_stock);
@@ -34,6 +39,7 @@ router.post('/in', (req, res) => {
     'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     [newStock, product_id]
   );
+  // 写入日志时保留商品名称和大类名称快照
   runInsert(
     'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [product_id, 'in', qty, before, newStock, note || '', operator || 'system', product.name, product.category_name || '']
@@ -47,19 +53,22 @@ router.post('/in', (req, res) => {
   });
 });
 
-// ======================== 出库（严格校验库存） ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 出库（严格校验库存）
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.post('/out', (req, res) => {
-  const { product_id, quantity, note, operator } = req.body;
+  const { product_id, quantity, note, operator, tracking_number } = req.body;
 
   if (!product_id || !quantity || Number(quantity) <= 0 || !Number.isInteger(Number(quantity))) {
     return res.status(400).json({ success: false, error: '参数错误：数量必须为正整数' });
   }
 
-  const product = getOne('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?', [product_id]);
-  if (!product) {
-    return res.status(404).json({ success: false, error: '产品不存在' });
-  }
+  const product = getOne(
+    'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+    [product_id]
+  );
+  if (!product) return res.status(404).json({ success: false, error: '产品不存在' });
 
   const qty = Number(quantity);
   const current = safeStock(product.current_stock);
@@ -74,25 +83,31 @@ router.post('/out', (req, res) => {
   }
 
   const newStock = current - qty;
+  const tracking = tracking_number ? String(tracking_number).trim() : '';
 
   runQuery(
     'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     [newStock, product_id]
   );
+  // 写入日志：绑定运单号（如果有的话）
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [product_id, 'out', qty, current, newStock, note || '', operator || 'system', product.name, product.category_name || '']
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'out', qty, current, newStock, note || '', operator || 'system', product.name, product.category_name || '', tracking]
   );
 
   res.json({
     success: true,
-    message: `出库成功，当前库存：${newStock}`,
+    message: tracking
+      ? `出库成功，当前库存：${newStock}（运单号：${tracking}）`
+      : `出库成功，当前库存：${newStock}`,
     newStock,
     beforeStock: current,
   });
 });
 
-// ======================== 库存调整（盘点） ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 库存调整（盘点）
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.post('/adjust', (req, res) => {
   const { product_id, quantity, note, operator } = req.body;
@@ -101,10 +116,11 @@ router.post('/adjust', (req, res) => {
     return res.status(400).json({ success: false, error: '参数错误：调整后数量必须为非负整数' });
   }
 
-  const product = getOne('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?', [product_id]);
-  if (!product) {
-    return res.status(404).json({ success: false, error: '产品不存在' });
-  }
+  const product = getOne(
+    'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+    [product_id]
+  );
+  if (!product) return res.status(404).json({ success: false, error: '产品不存在' });
 
   const qty = Number(quantity);
   const current = safeStock(product.current_stock);
@@ -128,7 +144,9 @@ router.post('/adjust', (req, res) => {
   });
 });
 
-// ======================== 批量入库 ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 批量入库
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.post('/batch-in', (req, res) => {
   const { items, operator } = req.body;
@@ -145,12 +163,11 @@ router.post('/batch-in', (req, res) => {
       errors.push({ product_id: item.product_id, error: '数量必须为正整数' });
       continue;
     }
-
-    const product = getOne('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?', [item.product_id]);
-    if (!product) {
-      errors.push({ product_id: item.product_id, error: '产品不存在' });
-      continue;
-    }
+    const product = getOne(
+      'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+      [item.product_id]
+    );
+    if (!product) { errors.push({ product_id: item.product_id, error: '产品不存在' }); continue; }
 
     validItems.push({
       product_id: item.product_id,
@@ -171,7 +188,6 @@ router.post('/batch-in', (req, res) => {
   for (const item of validItems) {
     const before = item.current_stock;
     const newStock = before + item.quantity;
-
     runQuery(
       'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [newStock, item.product_id]
@@ -180,7 +196,6 @@ router.post('/batch-in', (req, res) => {
       'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [item.product_id, 'in', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '']
     );
-
     results.push({
       product_id: item.product_id,
       product_name: item.product_name,
@@ -199,7 +214,9 @@ router.post('/batch-in', (req, res) => {
   });
 });
 
-// ======================== 批量出库（严格校验库存） ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 批量出库（严格校验库存）
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.post('/batch-out', (req, res) => {
   const { items, operator } = req.body;
@@ -216,16 +233,14 @@ router.post('/batch-out', (req, res) => {
       stockErrors.push({ product_id: item.product_id, error: '数量必须为正整数' });
       continue;
     }
-
-    const product = getOne('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?', [item.product_id]);
-    if (!product) {
-      stockErrors.push({ product_id: item.product_id, error: '产品不存在' });
-      continue;
-    }
+    const product = getOne(
+      'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+      [item.product_id]
+    );
+    if (!product) { stockErrors.push({ product_id: item.product_id, error: '产品不存在' }); continue; }
 
     const current = safeStock(product.current_stock);
     const requested = Number(item.quantity);
-
     if (current < requested) {
       stockErrors.push({
         product_id: item.product_id,
@@ -236,15 +251,15 @@ router.post('/batch-out', (req, res) => {
         requested_quantity: requested,
       });
     } else {
-    validItems.push({
-      product_id: item.product_id,
-      product_name: product.name,
-      sku_code: product.sku_code,
-      quantity: requested,
-      note: item.note || '',
-      current_stock: current,
-      category_name: product.category_name || '',
-    });
+      validItems.push({
+        product_id: item.product_id,
+        product_name: product.name,
+        sku_code: product.sku_code,
+        quantity: requested,
+        note: item.note || '',
+        current_stock: current,
+        category_name: product.category_name || '',
+      });
     }
   }
 
@@ -261,7 +276,6 @@ router.post('/batch-out', (req, res) => {
   for (const item of validItems) {
     const before = item.current_stock;
     const newStock = before - item.quantity;
-
     runQuery(
       'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [newStock, item.product_id]
@@ -270,7 +284,6 @@ router.post('/batch-out', (req, res) => {
       'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '']
     );
-
     results.push({
       product_id: item.product_id,
       product_name: item.product_name,
@@ -288,9 +301,11 @@ router.post('/batch-out', (req, res) => {
   });
 });
 
-// ======================== 扫码出库（绑定运单号） ========================
-// 核心新接口：两步扫码 -> 先扫商品条码 -> 再扫运单号 -> 绑定后提交出库
-// 与普通批量出库的区别：会将出库记录关联到 shipping_records 表
+// ═══════════════════════════════════════════════════════════════════════════
+// 扫码出库（绑定运单号）
+// 核心新接口：扫码出库时，将出库记录关联到 shipping_records 表，
+// 并将运单号同时写入 inventory_logs 的 tracking_number 字段。
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.post('/scan-out', (req, res) => {
   const { items, tracking_number, operator } = req.body;
@@ -298,12 +313,11 @@ router.post('/scan-out', (req, res) => {
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ success: false, error: '缺少有效的出库商品列表' });
   }
-
-  if (!tracking_number || !tracking_number.trim()) {
+  if (!tracking_number || !String(tracking_number).trim()) {
     return res.status(400).json({ success: false, error: '运单号不能为空' });
   }
 
-  const tracking = tracking_number.trim();
+  const tracking = String(tracking_number).trim();
 
   // 第一步：验证所有商品的库存是否充足
   const stockErrors = [];
@@ -314,16 +328,14 @@ router.post('/scan-out', (req, res) => {
       stockErrors.push({ product_id: item.product_id, error: '数量必须为正整数' });
       continue;
     }
-
-    const product = getOne('SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?', [item.product_id]);
-    if (!product) {
-      stockErrors.push({ product_id: item.product_id, error: '产品不存在' });
-      continue;
-    }
+    const product = getOne(
+      'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?',
+      [item.product_id]
+    );
+    if (!product) { stockErrors.push({ product_id: item.product_id, error: '产品不存在' }); continue; }
 
     const current = safeStock(product.current_stock);
     const requested = Number(item.quantity);
-
     if (current < requested) {
       stockErrors.push({
         product_id: item.product_id,
@@ -334,19 +346,18 @@ router.post('/scan-out', (req, res) => {
         requested_quantity: requested,
       });
     } else {
-    validItems.push({
-      product_id: item.product_id,
-      product_name: product.name,
-      sku_code: product.sku_code,
-      quantity: requested,
-      note: item.note || `运单出库: ${tracking}`,
-      current_stock: current,
-      category_name: product.category_name || '',
-    });
+      validItems.push({
+        product_id: item.product_id,
+        product_name: product.name,
+        sku_code: product.sku_code,
+        quantity: requested,
+        note: item.note || `运单出库: ${tracking}`,
+        current_stock: current,
+        category_name: product.category_name || '',
+      });
     }
   }
 
-  // 库存不足则整体拒绝（不出库任何商品）
   if (stockErrors.length > 0) {
     return res.status(400).json({
       success: false,
@@ -357,12 +368,10 @@ router.post('/scan-out', (req, res) => {
   }
 
   // 第二步：处理运单记录
-  // 查找是否存在该运单号，不存在则创建，存在则追加
   let shippingRecord = getOne('SELECT * FROM shipping_records WHERE tracking_number = ?', [tracking]);
   let isNewShipping = false;
 
   if (!shippingRecord) {
-    // 新建运单记录
     const insertResult = runInsert(
       'INSERT INTO shipping_records (tracking_number, operator, status, total_items) VALUES (?, ?, ?, ?)',
       [tracking, operator || 'system', 'pending', validItems.length]
@@ -373,31 +382,28 @@ router.post('/scan-out', (req, res) => {
     shippingRecord = getOne('SELECT * FROM shipping_records WHERE id = ?', [insertResult.lastId]);
     isNewShipping = true;
   } else {
-    // 已存在的运单：累加商品数量
     const newTotal = safeStock(shippingRecord.total_items) + validItems.length;
     runQuery('UPDATE shipping_records SET total_items = ? WHERE id = ?', [newTotal, shippingRecord.id]);
     shippingRecord.total_items = newTotal;
   }
 
-  // 第三步：执行出库并记录明细
+  // 第三步：执行出库并记录明细（运单号写入 inventory_logs.tracking_number）
   const inventoryResults = [];
   for (const item of validItems) {
     const before = item.current_stock;
     const newStock = before - item.quantity;
 
-    // 更新产品库存
     runQuery(
       'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [newStock, item.product_id]
     );
 
-    // 写入库存日志（保留完整的前后库存快照）
+    // 写入库存日志：tracking_number 字段用于日志溯源
     runInsert(
-      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '']
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '', tracking]
     );
 
-    // 写入运单明细
     runInsert(
       'INSERT INTO shipping_items (shipping_id, product_id, quantity) VALUES (?, ?, ?)',
       [shippingRecord.id, item.product_id, item.quantity]
@@ -429,27 +435,47 @@ router.post('/scan-out', (req, res) => {
   });
 });
 
-// ======================== 查询日志列表 ========================
+// ═══════════════════════════════════════════════════════════════════════════
+// 查询日志列表（数据快照解耦：不再依赖 JOIN products）
+// 读取 inventory_logs 表的 product_name / category_name / tracking_number 字段，
+// 即使商品被删除，日志仍完整独立。
+// ═══════════════════════════════════════════════════════════════════════════
 
 router.get('/logs', (req, res) => {
   const { product_id, keyword, type, limit, offset } = req.query;
+  const params = [];
+
+  // ── 主查询：直接从 inventory_logs 读取快照字段，移除 LEFT JOIN ──
   let sql = `
-    SELECT l.*, p.name as product_name, p.sku_code, p.unit as product_unit, c.name as category_name
+    SELECT
+      l.id,
+      l.product_id,
+      l.type,
+      l.quantity,
+      l.stock_before,
+      l.stock_after,
+      l.note,
+      l.operator,
+      l.created_at,
+      l.product_name,
+      l.category_name,
+      l.tracking_number,
+      p.sku_code,
+      p.unit as product_unit
     FROM inventory_logs l
     LEFT JOIN products p ON l.product_id = p.id
-    LEFT JOIN categories c ON p.category_id = c.id
     WHERE 1=1
   `;
-  const params = [];
 
   if (product_id) {
     sql += ' AND l.product_id = ?';
     params.push(product_id);
   }
   if (keyword) {
-    sql += ' AND (COALESCE(l.product_name, \'\') <> \'\' AND l.product_name LIKE ? OR COALESCE(l.product_name, \'\') = \'\' AND p.name LIKE ?)';
+    // 优先匹配快照字段，再兼容 sku_code
+    sql += ' AND (l.product_name LIKE ? OR l.category_name LIKE ? OR p.sku_code LIKE ?)';
     const kw = `%${keyword}%`;
-    params.push(kw, kw);
+    params.push(kw, kw, kw);
   }
   if (type) {
     sql += ' AND l.type = ?';
@@ -458,11 +484,19 @@ router.get('/logs', (req, res) => {
 
   sql += ' ORDER BY l.created_at DESC';
 
-  const countSql = sql.replace(
-    'SELECT l.*, p.name as product_name, p.sku_code, p.unit as product_unit, c.name as category_name',
-    'SELECT COUNT(*) as total'
-  );
-  const countResult = getOne(countSql, params);
+  // ── 计数查询（同样移除 JOIN） ──
+  let countSql = `
+    SELECT COUNT(*) as total
+    FROM inventory_logs l
+    LEFT JOIN products p ON l.product_id = p.id
+    WHERE 1=1
+  `;
+  const countParams = [...params];
+  if (product_id) { countSql += ' AND l.product_id = ?'; }
+  if (keyword) { countSql += ' AND (l.product_name LIKE ? OR l.category_name LIKE ? OR p.sku_code LIKE ?)'; }
+  if (type) { countSql += ' AND l.type = ?'; }
+
+  const countResult = getOne(countSql, countParams);
   const total = countResult ? (countResult.total || 0) : 0;
 
   if (limit) {

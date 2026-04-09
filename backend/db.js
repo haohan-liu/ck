@@ -130,6 +130,7 @@ function createTables() {
   migrateInventoryLogs();
   migrateShippingRecords();
   migrateProductSnapshot();
+  migrateTrackingNumber();
 
   console.log('[DB] 表结构创建 / 迁移完成');
 }
@@ -181,6 +182,19 @@ function migrateProductSnapshot() {
   if (!existingColumns.includes('category_name')) {
     db.run('ALTER TABLE inventory_logs ADD COLUMN category_name TEXT DEFAULT \'\'');
     console.log('[DB] 迁移：已添加 category_name 列');
+  }
+}
+
+/**
+ * 为 inventory_logs 表补充 tracking_number 追踪列
+ * 运单号出库场景下绑定运单号，方便日志溯源
+ */
+function migrateTrackingNumber() {
+  const existingColumns = getExistingColumns('inventory_logs');
+
+  if (!existingColumns.includes('tracking_number')) {
+    db.run('ALTER TABLE inventory_logs ADD COLUMN tracking_number TEXT DEFAULT \'\'');
+    console.log('[DB] 迁移：已添加 tracking_number 列');
   }
 }
 
