@@ -1,6 +1,7 @@
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { getCategories } from '../api/categories.js'
+import MySelect from './ui/MySelect.vue'
 
 const props = defineProps({ visible: Boolean, product: Object })
 const emit = defineEmits(['close', 'success'])
@@ -22,8 +23,17 @@ const attrs = ref({})
 const originalProduct = ref(null)
 const formError = ref('')
 const submitting = ref(false)
+const dataLoaded = ref(false)
 
 const UNITS = ['件', '个', '套', '对', '箱', '盒']
+
+const categoryOptions = computed(() =>
+  categories.value.map(cat => ({ value: cat.id, label: cat.name }))
+)
+
+const unitOptions = computed(() =>
+  UNITS.map(u => ({ value: u, label: u }))
+)
 
 const currentSchema = computed(() => {
   if (!form.value.category_id) return []
@@ -52,34 +62,51 @@ watch(() => form.value.category_id, () => {
   formError.value = ''
 })
 
-watch(() => props.visible, async (val) => {
-  if (val) {
-    await loadCategories()
-    if (props.product) {
-      originalProduct.value = props.product
-      form.value = {
-        category_id: props.product.category_id, remark: props.product.remark || '',
-        location_code: props.product.location_code || '',
-        current_stock: props.product.current_stock || 0,
-        min_stock: props.product.min_stock || 0,
-        unit: props.product.unit || '件',
-        cost_price: props.product.cost_price || 0,
-      }
-      attrs.value = { ...(props.product.attributes || {}) }
-    } else {
-      originalProduct.value = null
-      form.value = { category_id: '', remark: '', location_code: '', current_stock: 0, min_stock: 0, unit: '件', cost_price: 0 }
-      attrs.value = {}
-    }
-    formError.value = ''
+// 监听 visible 和 product 的组合变化
+watch([() => props.visible, () => props.product], async ([visible, product]) => {
+  if (!visible) {
+    dataLoaded.value = false
+    return
   }
-})
+  
+  // 加载分类
+  await loadCategories()
+  
+  // 填充表单数据
+  if (product) {
+    originalProduct.value = product
+    // 使用 JSON.parse(JSON.stringify) 确保是深拷贝
+    const productData = JSON.parse(JSON.stringify(product))
+    form.value = {
+      category_id: productData.category_id || '',
+      remark: productData.remark || '',
+      location_code: productData.location_code || '',
+      current_stock: productData.current_stock || 0,
+      min_stock: productData.min_stock || 0,
+      unit: productData.unit || '件',
+      cost_price: productData.cost_price || 0,
+    }
+    attrs.value = productData.attributes || {}
+  } else {
+    originalProduct.value = null
+    form.value = { category_id: '', remark: '', location_code: '', current_stock: 0, min_stock: 0, unit: '件', cost_price: 0 }
+    attrs.value = {}
+  }
+  formError.value = ''
+  dataLoaded.value = true
+}, { immediate: true })
 
 async function loadCategories() {
   categoryLoading.value = true
   try {
     const res = await getCategories()
-    categories.value = res.data.data
+    categories.value = res.data.data.map(cat => ({
+      ...cat,
+      template_schema: (() => {
+        if (Array.isArray(cat.template_schema)) return cat.template_schema
+        try { return JSON.parse(cat.template_schema) } catch { return [] }
+      })()
+    }))
   } catch (e) { console.error(e) }
   finally { categoryLoading.value = false }
 }
@@ -130,14 +157,14 @@ async function submit() {
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/5 flex-shrink-0">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
               </svg>
             </div>
             <h3 class="text-base font-bold text-slate-900 dark:text-white">{{ mode === 'add' ? '新增商品' : '编辑商品' }}</h3>
           </div>
           <button @click="$emit('close')" class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
             </svg>
           </button>
@@ -150,30 +177,21 @@ async function submit() {
           <div class="grid grid-cols-2 gap-5">
             <div>
               <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">商品大类 <span class="text-rose-500">*</span></label>
-              <select
+              <MySelect
                 v-model="form.category_id"
+                :options="categoryOptions"
+                placeholder="请选择大类…"
                 :disabled="mode === 'edit'"
-                class="w-full py-3 px-4 rounded-xl text-sm text-slate-900 dark:text-white
-                       bg-slate-50 dark:bg-slate-800 border-2 border-transparent
-                       focus:border-indigo-500 focus:outline-none transition-all cursor-pointer disabled:opacity-50"
-                style="background-image: url(&quot;data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e&quot;); background-position: right 0.75rem center; background-repeat: no-repeat; background-size: 1.25em; padding-right: 2.5rem; appearance: none;"
-              >
-                <option value="" disabled>请选择大类…</option>
-                <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-              </select>
+              />
               <p v-if="mode === 'edit'" class="text-xs text-slate-400 dark:text-slate-500 mt-1">编辑时不可切换大类</p>
             </div>
             <div>
               <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">库存单位</label>
-              <select
+              <MySelect
                 v-model="form.unit"
-                class="w-full py-3 px-4 rounded-xl text-sm text-slate-900 dark:text-white
-                       bg-slate-50 dark:bg-slate-800 border-2 border-transparent
-                       focus:border-indigo-500 focus:outline-none transition-all cursor-pointer"
-                style="background-image: url(&quot;data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e&quot;); background-position: right 0.75rem center; background-repeat: no-repeat; background-size: 1.25em; padding-right: 2.5rem; appearance: none;"
-              >
-                <option v-for="u in UNITS" :key="u" :value="u">{{ u }}</option>
-              </select>
+                :options="unitOptions"
+                placeholder="请选择单位"
+              />
             </div>
           </div>
 
@@ -198,7 +216,7 @@ async function submit() {
 
           <!-- 未选大类提示 -->
           <div v-else class="flex items-center gap-3 p-4 rounded-xl text-sm text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
             </svg>
             请先在上方选择一个商品大类
@@ -248,7 +266,7 @@ async function submit() {
 
           <!-- 错误提示 -->
           <div v-if="formError" class="flex items-start gap-2.5 p-3.5 rounded-xl text-sm bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-300">
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 shrink-0 mt-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
             </svg>
             {{ formError }}

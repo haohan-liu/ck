@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const { getAll, getOne, runInsert, runQuery } = require('../db');
 
+/**
+ * 获取本地时间的 SQLite DATETIME 格式字符串
+ * 解决 SQLite CURRENT_TIMESTAMP 使用 UTC 时间的问题
+ */
+function localDateTime() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+         `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 function formatCategory(cat) {
   if (!cat) return null;
   let template = cat.template_schema;
@@ -33,8 +44,8 @@ router.post('/', (req, res) => {
   }
   const schema = Array.isArray(template_schema) ? template_schema : [];
   const result = runInsert(
-    'INSERT INTO categories (name, template_schema) VALUES (?, ?)',
-    [name.trim(), JSON.stringify(schema)]
+    'INSERT INTO categories (name, template_schema, created_at) VALUES (?, ?, ?)',
+    [name.trim(), JSON.stringify(schema), localDateTime()]
   );
   if (result.success) {
     const newCategory = getOne('SELECT * FROM categories WHERE id = ?', [result.lastId]);

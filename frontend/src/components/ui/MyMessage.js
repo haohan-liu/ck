@@ -7,28 +7,35 @@
  *   MyMessage.error('网络错误，请重试')
  *   MyMessage.warning('库存已不足，请检查')
  *   MyMessage.info('数据已更新')
- *
- * 也支持组件内直接调用：
- *   const { $msg } = getCurrentInstance()
- *   $msg.success('操作成功')
  */
 
-import { createApp, defineComponent, h } from 'vue'
+import { createApp, defineComponent, h, ref, reactive } from 'vue'
 
-// ======================== Toast 组件（无 UI 框架，纯 CSS） ========================
-
-const ToastComponent = defineComponent({
-  name: 'MyMessageToast',
+// ======================== 单个 Toast 组件（带独立动画） ========================
+const ToastItem = defineComponent({
+  name: 'MyMessageToastItem',
   props: {
-    id: { type: Number, required: true },
-    type: { type: String, default: 'info' },
-    message: { type: String, required: true },
-    duration: { type: Number, default: 3000 },
+    toast: { type: Object, required: true },
   },
-  emits: ['close'],
+  emits: ['remove'],
+  setup(props, { emit }) {
+    const visible = ref(false)
+    // 延迟显示，让容器先渲染
+    setTimeout(() => { visible.value = true }, 10)
+
+    // 自动移除
+    if (props.toast.duration > 0) {
+      setTimeout(() => {
+        visible.value = false
+        setTimeout(() => emit('remove', props.toast.id), 300)
+      }, props.toast.duration)
+    }
+
+    return { visible }
+  },
   computed: {
     iconSvg() {
-      switch (this.type) {
+      switch (this.toast.type) {
         case 'success':
           return `<svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`
         case 'error':
@@ -40,19 +47,15 @@ const ToastComponent = defineComponent({
       }
     },
     styleClass() {
-      switch (this.type) {
-        case 'success':
-          return 'border-emerald-500/50 bg-emerald-950/80 text-emerald-200'
-        case 'error':
-          return 'border-red-500/50 bg-red-950/80 text-red-200'
-        case 'warning':
-          return 'border-amber-500/50 bg-amber-950/80 text-amber-200'
-        default:
-          return 'border-sky-500/50 bg-sky-950/80 text-sky-200'
+      switch (this.toast.type) {
+        case 'success': return 'border-emerald-500/50 bg-emerald-950/80 text-emerald-200'
+        case 'error':   return 'border-red-500/50 bg-red-950/80 text-red-200'
+        case 'warning':  return 'border-amber-500/50 bg-amber-950/80 text-amber-200'
+        default:        return 'border-sky-500/50 bg-sky-950/80 text-sky-200'
       }
     },
     iconColorClass() {
-      switch (this.type) {
+      switch (this.toast.type) {
         case 'success': return 'text-emerald-400'
         case 'error':   return 'text-red-400'
         case 'warning':  return 'text-amber-400'
@@ -60,23 +63,22 @@ const ToastComponent = defineComponent({
       }
     },
   },
-  mounted() {
-    if (this.duration > 0) {
-      this._timer = setTimeout(() => this.$emit('close'), this.duration)
-    }
-  },
-  beforeUnmount() {
-    if (this._timer) clearTimeout(this._timer)
-  },
   render() {
     return h('div', {
-      class: `flex items-start gap-3 px-4 py-3 rounded-xl border shadow-xl shadow-black/40 backdrop-blur-sm ${this.styleClass}`
+      class: [
+        'toast-item flex items-start gap-3 px-4 py-3 rounded-xl border shadow-xl shadow-black/40 backdrop-blur-sm',
+        this.styleClass,
+        this.visible ? 'toast-enter-active' : 'toast-leave-active'
+      ]
     }, [
       h('span', { class: this.iconColorClass, innerHTML: this.iconSvg }),
-      h('p', { class: 'flex-1 text-sm leading-relaxed break-words' }, this.message),
+      h('p', { class: 'flex-1 text-sm leading-relaxed break-words' }, this.toast.message),
       h('button', {
         class: 'shrink-0 w-5 h-5 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity cursor-pointer -mt-0.5',
-        onClick: () => this.$emit('close'),
+        onClick: () => {
+          this.visible = false
+          setTimeout(() => this.$emit('remove', this.toast.id), 300)
+        }
       }, [
         h('svg', { class: 'w-3.5 h-3.5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
           h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2.5', d: 'M6 18L18 6M6 6l12 12' })
@@ -90,7 +92,7 @@ const ToastComponent = defineComponent({
 
 let toastApp = null
 let container = null
-let toastList = []
+let toastList = reactive([])
 let toastIdCounter = 0
 
 function ensureContainer() {
@@ -111,67 +113,22 @@ function ensureContainer() {
     `
     document.body.appendChild(container)
 
-    toastApp = createApp({})
+    toastApp = createApp({
+      setup() {
+        return () => toastList.map(toast =>
+          h(ToastItem, {
+            key: toast.id,
+            toast,
+            onRemove: (id) => {
+              const idx = toastList.findIndex(t => t.id === id)
+              if (idx !== -1) toastList.splice(idx, 1)
+            }
+          })
+        )
+      }
+    })
     toastApp.mount(container)
   }
-}
-
-function removeToast(id) {
-  const idx = toastList.findIndex(t => t.id === id)
-  if (idx !== -1) {
-    toastList.splice(idx, 1)
-    renderToasts()
-  }
-}
-
-function renderToasts() {
-  if (!toastApp) return
-
-  const existing = container.querySelectorAll('[data-toast-id]')
-  existing.forEach(el => el.remove())
-
-  // 每次重新挂载整个列表：销毁旧实例 → 创建新实例
-  const oldRoot = container.querySelector('[data-toast-root]')
-  if (oldRoot) oldRoot.remove()
-
-  if (toastList.length === 0) return
-
-  const root = document.createElement('div')
-  root.setAttribute('data-toast-root', 'true')
-  container.appendChild(root)
-
-  const App = defineComponent({
-    setup() {
-      const vnodes = toastList.map(toast => {
-        let closeFn = null
-        const proxy = new Proxy({}, {
-          get(_, key) {
-            if (key === '$on') return (evt, cb) => { if (evt === 'close') closeFn = cb }
-            if (key === '$emit') return (evt) => { if (evt === 'close' && closeFn) closeFn() }
-            if (key === '$data') return toast
-            if (key === '$el') return undefined
-            if (key in toast) return toast[key]
-            if (key === 'config') return { get textColor() { return '#10b981' } }
-            return undefined
-          },
-          set() { return true },
-          has() { return true },
-        })
-        return h(ToastComponent, {
-          key: toast.id,
-          id: toast.id,
-          type: toast.type,
-          message: toast.message,
-          duration: toast.duration,
-          onClose: () => removeToast(toast.id),
-        })
-      })
-      return () => vnodes
-    },
-  })
-
-  const listApp = createApp(App)
-  listApp.mount(root)
 }
 
 function show(message, type = 'info', duration = 3000) {
@@ -180,13 +137,12 @@ function show(message, type = 'info', duration = 3000) {
   const id = ++toastIdCounter
   toastList.push({ id, type, message, duration })
 
-  setTimeout(() => renderToasts(), 0)
-
   return id
 }
 
 function hide(id) {
-  removeToast(id)
+  const idx = toastList.findIndex(t => t.id === id)
+  if (idx !== -1) toastList.splice(idx, 1)
 }
 
 function injectStyles() {
@@ -195,9 +151,15 @@ function injectStyles() {
   style.id = 'my-toast-styles'
   style.textContent = `
     @keyframes toast-in {
-      from { opacity: 0; transform: translateX(20px) scale(0.95); }
+      from { opacity: 0; transform: translateX(24px) scale(0.95); }
       to   { opacity: 1; transform: translateX(0) scale(1); }
     }
+    @keyframes toast-out {
+      from { opacity: 1; transform: translateX(0) scale(1); }
+      to   { opacity: 0; transform: translateX(24px) scale(0.95); }
+    }
+    .toast-enter-active { animation: toast-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+    .toast-leave-active { animation: toast-out 0.25s ease forwards; }
   `
   document.head.appendChild(style)
 }

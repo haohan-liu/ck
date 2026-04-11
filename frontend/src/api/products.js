@@ -27,3 +27,7 @@ export function deleteProduct(id) {
 export function resetAllProducts() {
   return api.post('/products/reset-all')
 }
+
+export function updateProductOrder(items) {
+  return api.post('/products/reorder', { items })
+}

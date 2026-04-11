@@ -105,7 +105,7 @@ onUnmounted(() => {
         'transition-all duration-150 text-left select-none',
         sizeHeight,
         isOpen
-          ? 'border-[var(--accent)] ring-2 ring-[var(--accent-glow)]'
+          ? 'border-[var(--filter-accent)] ring-2 ring-[var(--filter-glow)]'
           : error
           ? 'border-red-500/60'
           : 'border-[var(--input-border)] hover:border-[var(--border-strong)]',
@@ -145,7 +145,8 @@ onUnmounted(() => {
     >
       <div
         v-if="isOpen"
-        class="absolute z-50 mt-1 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--modal-bg)] shadow-xl shadow-black/40 overflow-hidden"
+        style="min-width: 100px; width: max-content;"
+        class="absolute z-50 mt-1 rounded-xl border border-[var(--border-strong)] bg-[var(--modal-bg)] shadow-xl shadow-black/40 overflow-hidden"
       >
         <div class="max-h-60 overflow-y-auto py-1">
           <button
@@ -156,7 +157,7 @@ onUnmounted(() => {
               'w-full flex items-center px-3.5 py-2.5 text-left transition-colors duration-100',
               'hover:bg-[var(--hover-bg)] cursor-pointer',
               String(option.value) === String(modelValue)
-                ? 'text-[var(--accent)] bg-[var(--accent)]/10 font-medium'
+                ? 'text-[var(--filter-accent)] bg-[var(--filter-bg)] font-medium'
                 : 'text-[var(--text-secondary)]',
             ]"
             :size="size"
@@ -170,6 +171,7 @@ onUnmounted(() => {
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              style="color: var(--filter-accent);"
             >
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
             </svg>

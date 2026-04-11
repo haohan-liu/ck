@@ -131,6 +131,8 @@ function createTables() {
   migrateShippingRecords();
   migrateProductSnapshot();
   migrateTrackingNumber();
+  migrateProductSortOrder();
+  migrateCategoriesCreatedAt();
 
   console.log('[DB] 表结构创建 / 迁移完成');
 }
@@ -149,6 +151,99 @@ function migrateInventoryLogs() {
   if (!existingColumns.includes('stock_after')) {
     db.run('ALTER TABLE inventory_logs ADD COLUMN stock_after INTEGER DEFAULT 0');
     console.log('[DB] 迁移：已添加 stock_after 列');
+  }
+
+  // 修复旧数据库的 CHECK 约束（确保支持 'add' 类型）
+  migrateLogTypeConstraint();
+}
+
+/**
+ * 修复 inventory_logs 表的 type CHECK 约束
+ * 旧版本可能只有 ('in', 'out', 'adjust')，需要添加 'add'
+ */
+function migrateLogTypeConstraint() {
+  try {
+    // 检查当前表定义中的约束
+    const tableInfo = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='inventory_logs'");
+
+    if (tableInfo.length === 0 || tableInfo[0].values.length === 0) {
+      console.log('[DB] 未找到 inventory_logs 表定义，跳过约束检查');
+      return;
+    }
+
+    const createSql = tableInfo[0].values[0][0];
+    console.log('[DB] 当前 inventory_logs 表约束定义:', createSql);
+
+    // 检查约束是否已包含 'add'
+    if (createSql.includes("'add'")) {
+      console.log('[DB] CHECK 约束已支持 add 类型，无需重建');
+      return;
+    }
+
+    // 约束不包含 'add'，需要重建表
+    console.log('[DB] 检测到旧的 CHECK 约束（不包含 add），开始重建表...');
+    recreateInventoryLogsTable();
+
+  } catch (e) {
+    console.warn('[DB] 约束迁移检查失败:', e.message);
+  }
+}
+
+/**
+ * 重建 inventory_logs 表以修复 CHECK 约束
+ */
+function recreateInventoryLogsTable() {
+  try {
+    // 1. 重命名旧表
+    db.run('ALTER TABLE inventory_logs RENAME TO inventory_logs_old');
+
+    // 2. 创建新表（包含完整的 CHECK 约束和所有字段）
+    db.run(`
+      CREATE TABLE IF NOT EXISTS inventory_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('in', 'out', 'adjust', 'add')),
+        quantity INTEGER NOT NULL,
+        stock_before INTEGER DEFAULT 0,
+        stock_after INTEGER DEFAULT 0,
+        note TEXT,
+        operator TEXT DEFAULT 'system',
+        product_name TEXT DEFAULT '',
+        category_name TEXT DEFAULT '',
+        tracking_number TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      )
+    `);
+
+    // 3. 获取旧表的列（检查是否有 tracking_number）
+    const oldColumns = getExistingColumns('inventory_logs_old');
+    const hasTrackingNumber = oldColumns.includes('tracking_number');
+
+    // 4. 迁移数据
+    if (hasTrackingNumber) {
+      db.run(`
+        INSERT INTO inventory_logs (id, product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number, created_at)
+        SELECT id, product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number, created_at FROM inventory_logs_old
+      `);
+    } else {
+      db.run(`
+        INSERT INTO inventory_logs (id, product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at)
+        SELECT id, product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at FROM inventory_logs_old
+      `);
+    }
+
+    // 5. 删除旧表
+    db.run('DROP TABLE inventory_logs_old');
+    console.log('[DB] inventory_logs 表已重建，CHECK 约束已更新');
+  } catch (e) {
+    console.error('[DB] 重建表失败，回滚...');
+    try {
+      db.run('DROP TABLE IF EXISTS inventory_logs');
+      db.run('ALTER TABLE inventory_logs_old RENAME TO inventory_logs');
+    } catch (rollbackErr) {
+      console.error('[DB] 回滚失败:', rollbackErr.message);
+    }
   }
 }
 
@@ -195,6 +290,71 @@ function migrateTrackingNumber() {
   if (!existingColumns.includes('tracking_number')) {
     db.run('ALTER TABLE inventory_logs ADD COLUMN tracking_number TEXT DEFAULT \'\'');
     console.log('[DB] 迁移：已添加 tracking_number 列');
+  }
+}
+
+/**
+ * 为 products 表补充 sort_order 排序字段
+ * 用于支持商品列表的自定义拖拽排序
+ */
+function migrateProductSortOrder() {
+  const existingColumns = getExistingColumns('products');
+
+  if (!existingColumns.includes('sort_order')) {
+    db.run('ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0');
+    console.log('[DB] 迁移：已添加 sort_order 列到 products 表');
+  }
+}
+
+/**
+ * 修复 categories 表的 created_at 时间问题
+ * 旧数据使用 SQLite CURRENT_TIMESTAMP (UTC)，需要更新为本地时间
+ */
+function migrateCategoriesCreatedAt() {
+  const existingColumns = getExistingColumns('categories');
+
+  if (!existingColumns.includes('created_at')) {
+    return;
+  }
+
+  try {
+    const categories = getAll('SELECT id, created_at FROM categories');
+    if (categories.length === 0) return;
+
+    let updated = 0;
+    categories.forEach(cat => {
+      if (cat.created_at) {
+        // 检查时间是否看起来是 UTC 格式（包含 T）
+        const isUTCFormat = String(cat.created_at).includes('T');
+        let localTime;
+
+        if (isUTCFormat) {
+          // UTC 时间字符串，转换为本地时间
+          const utcDate = new Date(cat.created_at + 'Z');
+          if (!isNaN(utcDate.getTime())) {
+            const pad = n => String(n).padStart(2, '0');
+            localTime = `${utcDate.getFullYear()}-${pad(utcDate.getMonth() + 1)}-${pad(utcDate.getDate())} ` +
+                       `${pad(utcDate.getHours())}:${pad(utcDate.getMinutes())}:${pad(utcDate.getSeconds())}`;
+          } else {
+            return;
+          }
+        } else {
+          // 已经是本地时间格式
+          return;
+        }
+
+        if (localTime) {
+          db.run('UPDATE categories SET created_at = ? WHERE id = ?', [localTime, cat.id]);
+          updated++;
+        }
+      }
+    });
+
+    if (updated > 0) {
+      console.log(`[DB] 迁移：已更新 ${updated} 条 categories 的 created_at 为本地时间`);
+    }
+  } catch (e) {
+    console.warn('[DB] categories created_at 迁移失败:', e.message);
   }
 }
 

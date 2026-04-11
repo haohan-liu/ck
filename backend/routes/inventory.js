@@ -14,6 +14,17 @@ function safeStock(value) {
   return isNaN(n) ? 0 : Math.max(0, Math.floor(n));
 }
 
+/**
+ * 获取本地时间的 SQLite DATETIME 格式字符串
+ * 解决 SQLite CURRENT_TIMESTAMP 使用 UTC 时间的问题
+ */
+function localDateTime() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+         `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 入库
 // ═══════════════════════════════════════════════════════════════════════════
@@ -39,10 +50,10 @@ router.post('/in', (req, res) => {
     'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     [newStock, product_id]
   );
-  // 写入日志时保留商品名称和大类名称快照
+  // 写入日志时保留商品名称和大类名称快照，使用本地时间
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [product_id, 'in', qty, before, newStock, note || '', operator || 'system', product.name, product.category_name || '']
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'in', qty, before, newStock, note || '', operator || 'system', product.name, product.category_name || '', localDateTime()]
   );
 
   res.json({
@@ -89,10 +100,10 @@ router.post('/out', (req, res) => {
     'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
     [newStock, product_id]
   );
-  // 写入日志：绑定运单号（如果有的话）
+  // 写入日志：绑定运单号（如果有的话），使用本地时间
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [product_id, 'out', qty, current, newStock, note || '', operator || 'system', product.name, product.category_name || '', tracking]
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'out', qty, current, newStock, note || '', operator || 'system', product.name, product.category_name || '', tracking, localDateTime()]
   );
 
   res.json({
@@ -131,8 +142,8 @@ router.post('/adjust', (req, res) => {
     [qty, product_id]
   );
   runInsert(
-    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [product_id, 'adjust', diff, current, qty, note || '库存调整', operator || 'system', product.name, product.category_name || '']
+    'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [product_id, 'adjust', diff, current, qty, note || '库存调整', operator || 'system', product.name, product.category_name || '', localDateTime()]
   );
 
   res.json({
@@ -188,13 +199,14 @@ router.post('/batch-in', (req, res) => {
   for (const item of validItems) {
     const before = item.current_stock;
     const newStock = before + item.quantity;
+    // 更新库存并写入日志，使用本地时间
     runQuery(
       'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [newStock, item.product_id]
     );
     runInsert(
-      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [item.product_id, 'in', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '']
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [item.product_id, 'in', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '', localDateTime()]
     );
     results.push({
       product_id: item.product_id,
@@ -276,13 +288,14 @@ router.post('/batch-out', (req, res) => {
   for (const item of validItems) {
     const before = item.current_stock;
     const newStock = before - item.quantity;
+    // 更新库存并写入日志，使用本地时间
     runQuery(
       'UPDATE products SET current_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [newStock, item.product_id]
     );
     runInsert(
-      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '']
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '', localDateTime()]
     );
     results.push({
       product_id: item.product_id,
@@ -398,10 +411,10 @@ router.post('/scan-out', (req, res) => {
       [newStock, item.product_id]
     );
 
-    // 写入库存日志：tracking_number 字段用于日志溯源
+    // 写入库存日志：tracking_number 字段用于日志溯源，使用本地时间
     runInsert(
-      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '', tracking]
+      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, tracking_number, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [item.product_id, 'out', item.quantity, before, newStock, item.note, operator || 'system', item.product_name, item.category_name || '', tracking, localDateTime()]
     );
 
     runInsert(
@@ -510,6 +523,22 @@ router.get('/logs', (req, res) => {
 
   const logs = getAll(sql, params);
   res.json({ success: true, data: logs, total });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 批量删除日志
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.delete('/logs', (req, res) => {
+  const { ids } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ success: false, error: '缺少待删除的日志 ID 列表' });
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const result = runQuery(`DELETE FROM inventory_logs WHERE id IN (${placeholders})`, ids);
+  res.json({ success: true, message: `成功删除 ${ids.length} 条日志` });
 });
 
 module.exports = router;

@@ -1,10 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getProducts, createProduct, updateProduct, deleteProduct } from '../api/products.js'
+import { ref, computed, onMounted } from 'vue'
+import draggable from 'vuedraggable'
+import { getProducts, createProduct, updateProduct, deleteProduct, updateProductOrder } from '../api/products.js'
 import { getCategories } from '../api/categories.js'
 import ProductModal from '../components/ProductModal.vue'
 import StockModal from '../components/StockModal.vue'
 import LabelPrintModal from '../components/LabelPrintModal.vue'
+import MyMessage from '../components/ui/MyMessage.js'
+import { MyFilterSelect, MyFilterSearch } from '../components/ui/index.js'
 
 const products = ref([])
 const categories = ref([])
@@ -30,6 +33,15 @@ const labelPrintProduct = ref(null)
 
 const mobileActionMenu = ref(null)
 
+// 拖拽排序 - 保存原始顺序用于比较
+let originalOrder = []
+
+// 分类筛选选项
+const categoryOptions = computed(() => [
+  { value: '', label: '全部大类' },
+  ...categories.value.map(cat => ({ value: cat.id, label: cat.name }))
+])
+
 async function loadProducts() {
   loading.value = true
   listError.value = ''
@@ -39,6 +51,8 @@ async function loadProducts() {
     if (filterKeyword.value.trim()) params.keyword = filterKeyword.value.trim()
     const res = await getProducts(params)
     products.value = res.data.data
+    // 保存原始顺序用于比较
+    originalOrder = products.value.map(p => p.id)
   } catch (e) {
     listError.value = '加载商品列表失败'
     console.error(e)
@@ -81,7 +95,7 @@ function openAdd() {
 }
 
 function openEdit(product) {
-  editingProduct.value = { ...product }
+  editingProduct.value = JSON.parse(JSON.stringify(product))
   showModal.value = true
 }
 
@@ -95,7 +109,7 @@ async function onModalSuccess(payload) {
     showModal.value = false
     await loadProducts()
   } catch (e) {
-    alert(e.response?.data?.error || '保存失败')
+    MyMessage.error(e.response?.data?.error || '保存失败')
   }
 }
 
@@ -113,7 +127,7 @@ async function confirmDeleteProduct() {
     deleteTarget.value = null
     await loadProducts()
   } catch (e) {
-    alert(e.response?.data?.error || '删除失败')
+    MyMessage.error(e.response?.data?.error || '删除失败')
   } finally {
     deleteLoading.value = false
   }
@@ -161,6 +175,36 @@ function toggleMobileMenu(productId) {
   mobileActionMenu.value = mobileActionMenu.value === productId ? null : productId
 }
 
+// 拖拽排序结束后的回调
+async function onDragEnd(evt) {
+  // 检查是否真正改变了顺序
+  const currentOrder = products.value.map(p => p.id)
+  const hasChanged = !currentOrder.every((id, index) => id === originalOrder[index])
+
+  if (!hasChanged) {
+    // 顺序没变，不做任何操作
+    return
+  }
+
+  // 更新原始顺序为当前顺序，避免连续拖动时误判
+  originalOrder = currentOrder
+
+  // 生成排序数据
+  const items = products.value.map((p, index) => ({
+    id: p.id,
+    sort_order: index + 1
+  }))
+
+  try {
+    await updateProductOrder(items)
+    MyMessage.success('排序已更新')
+  } catch (e) {
+    MyMessage.error('保存排序失败: ' + (e.response?.data?.error || e.message))
+    // 重新加载列表以恢复原始顺序
+    await loadProducts()
+  }
+}
+
 function onPageClick(e) {
   if (mobileActionMenu.value && !e.target.closest('.action-menu-btn') && !e.target.closest('.action-menu-dropdown')) {
     mobileActionMenu.value = null
@@ -192,7 +236,7 @@ onMounted(() => {
                  hover:from-indigo-600 hover:to-indigo-700
                  active:scale-95 transition-all duration-200 cursor-pointer"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 5v14"/><path d="M5 12h14"/>
           </svg>
           新增商品
@@ -200,38 +244,35 @@ onMounted(() => {
       </div>
 
       <!-- 筛选栏 -->
-      <div class="flex items-center gap-3 mt-4 flex-wrap">
-        <select
-          v-model="filterCategory"
-          @change="loadProducts"
-          class="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer"
-        >
-          <option value="">全部大类</option>
-          <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-        </select>
+      <div class="mt-4">
+        <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-2 lg:gap-3">
+          <!-- 下拉筛选 -->
+          <MyFilterSelect
+            v-model="filterCategory"
+            :options="categoryOptions"
+            placeholder="全部大类"
+            @change="loadProducts"
+          />
 
-        <div class="flex-1 min-w-0">
-          <div class="relative">
-            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-            </svg>
-            <input
+          <!-- 搜索框 -->
+          <div class="flex-1 min-w-0">
+            <MyFilterSearch
               v-model="filterKeyword"
-              @input="onKeywordInput"
-              type="text"
               placeholder="搜索名称 / SKU / 库位"
-              class="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+              @search="onKeywordInput"
             />
           </div>
-        </div>
 
-        <button
-          v-if="filterCategory || filterKeyword"
-          @click="resetFilters"
-          class="px-3 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
-        >
-          重置
-        </button>
+          <!-- 重置按钮 -->
+          <button
+            v-if="filterCategory || filterKeyword"
+            @click="resetFilters"
+            class="shrink-0 h-10 px-4 text-sm font-medium rounded-xl border-2 transition-all duration-200 cursor-pointer
+                   text-[var(--filter-accent)] border-[var(--filter-accent)] hover:bg-[var(--filter-bg)]"
+          >
+            重置
+          </button>
+        </div>
       </div>
     </div>
 
@@ -241,7 +282,7 @@ onMounted(() => {
       <!-- 错误 -->
       <div v-if="listError" class="mx-4 lg:mx-6 mt-4 p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center gap-3">
         <div class="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
           </svg>
         </div>
@@ -260,7 +301,7 @@ onMounted(() => {
       <!-- 空状态 -->
       <div v-else-if="products.length === 0" class="flex flex-col items-center justify-center py-20">
         <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
           </svg>
         </div>
@@ -271,195 +312,232 @@ onMounted(() => {
       <!-- PC 表格 (>= lg) -->
       <div v-else-if="!loading && products.length > 0" class="hidden lg:block px-6 py-5">
         <div class="rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
-                <th class="px-5 py-3.5 text-left font-medium">SKU 编号</th>
-                <th class="px-5 py-3.5 text-left font-medium">商品名称</th>
-                <th class="px-5 py-3.5 text-left font-medium">大类</th>
-                <th class="px-5 py-3.5 text-center font-medium">库存</th>
-                <th class="px-5 py-3.5 text-center font-medium">预警阈值</th>
-                <th class="px-5 py-3.5 text-right font-medium">单价</th>
-                <th class="px-5 py-3.5 text-left font-medium">库位</th>
-                <th class="px-5 py-3.5 text-right font-medium pr-5">操作</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-50 dark:divide-white/5">
-              <tr
-                v-for="p in products"
-                :key="p.id"
-                class="group hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors"
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[900px]">
+              <thead>
+                <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
+                  <th class="w-12 px-3 py-3.5"></th>
+                  <th class="px-5 py-3.5 text-left font-medium whitespace-nowrap">SKU 编号</th>
+                  <th class="px-5 py-3.5 text-left font-medium min-w-[200px]">商品名称</th>
+                  <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">大类</th>
+                  <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">库存</th>
+                  <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">预警</th>
+                  <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">单价</th>
+                  <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">库位</th>
+                  <th class="px-5 py-3.5 text-right font-medium pr-6 whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <draggable
+                v-model="products"
+                item-key="id"
+                tag="tbody"
+                handle=".drag-handle"
+                :animation="150"
+                ghost-class="drag-ghost"
+                chosen-class="is-drag-chosen"
+                drag-class="is-drag-dragging"
+                @end="onDragEnd"
               >
-                <td class="px-5 py-3.5">
-                  <span class="inline-flex px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">
-                    {{ p.sku_code }}
-                  </span>
-                </td>
-                <td class="px-5 py-3.5">
-                  <div class="text-sm font-medium text-slate-900 dark:text-white leading-snug">{{ p.name }}</div>
-                  <div v-if="p.remark" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-[200px]">{{ p.remark }}</div>
-                </td>
-                <td class="px-5 py-3.5">
-                  <span class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
-                    {{ p.category_name }}
-                  </span>
-                </td>
-                <td class="px-5 py-3.5 text-center">
-                  <div class="flex flex-col items-center gap-1">
-                    <span class="text-lg font-bold leading-none" :class="stockStatus(p) === 'zero' ? 'text-rose-500' : (stockStatus(p) === 'warn' ? 'text-amber-500' : 'text-slate-900 dark:text-white')">
-                      {{ p.current_stock }}
-                    </span>
-                    <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="stockStatus(p) === 'zero' ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400' : (stockStatus(p) === 'warn' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400')">
-                      {{ stockLabel(p) }}
-                    </span>
-                  </div>
-                </td>
-                <td class="px-5 py-3.5 text-center text-sm text-slate-500 dark:text-slate-400">{{ p.min_stock }} {{ p.unit }}</td>
-                <td class="px-5 py-3.5 text-right font-medium text-slate-700 dark:text-slate-300 pr-8">¥{{ Number(p.cost_price || 0).toFixed(2) }}</td>
-                <td class="px-5 py-3.5">
-                  <span v-if="p.location_code" class="inline-flex px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/5">
-                    {{ p.location_code }}
-                  </span>
-                  <span v-else class="text-xs text-slate-400 dark:text-slate-500">—</span>
-                </td>
-                <td class="px-5 py-3.5 pr-5">
-                  <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                    <!-- 入库 -->
-                    <button @click="openStockIn(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer">
-                      +入库
-                    </button>
-                    <!-- 出库 -->
-                    <button @click="openStockOut(p)" :disabled="p.current_stock === 0" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer">
-                      -出库
-                    </button>
-                    <!-- 调整 -->
-                    <button @click="openStockAdjust(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer">
-                      调整
-                    </button>
-                    <span class="mx-0.5 text-xs" style="color: var(--border-strong);">|</span>
-                    <!-- 编辑 -->
-                    <button @click="openEdit(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
-                      编辑
-                    </button>
-                    <!-- 删除 -->
-                    <button @click="openDelete(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all cursor-pointer">
-                      删除
-                    </button>
-                    <span class="mx-0.5 text-xs" style="color: var(--border-strong);">|</span>
-                    <!-- 打印 -->
-                    <button @click="openLabelPrint(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20 hover:bg-sky-100 dark:hover:bg-sky-500/20 active:scale-95 transition-all cursor-pointer">
-                      标签
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                <template #item="{ element: p }">
+                  <tr class="group hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors">
+                    <td class="px-3 py-3.5">
+                      <div class="drag-handle cursor-grab active:cursor-grabbing p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors" title="拖动排序">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                          <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+                        </svg>
+                      </div>
+                    </td>
+                    <td class="px-2 py-3.5">
+                      <span class="inline-flex px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">
+                        {{ p.sku_code }}
+                      </span>
+                    </td>
+                    <td class="px-5 py-3.5">
+                      <div class="text-sm font-medium text-slate-900 dark:text-white leading-snug">{{ p.name }}</div>
+                      <div v-if="p.remark" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-[200px]">{{ p.remark }}</div>
+                    </td>
+                    <td class="px-5 py-3.5 text-center">
+                      <span class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
+                        {{ p.category_name }}
+                      </span>
+                    </td>
+                    <td class="px-5 py-3.5 text-center whitespace-nowrap">
+                      <div class="flex flex-col items-center gap-1">
+                        <span class="text-lg font-bold leading-none" :class="stockStatus(p) === 'zero' ? 'text-rose-500' : (stockStatus(p) === 'warn' ? 'text-amber-500' : 'text-slate-900 dark:text-white')">
+                          {{ p.current_stock }}
+                        </span>
+                        <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="stockStatus(p) === 'zero' ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400' : (stockStatus(p) === 'warn' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400')">
+                          {{ stockLabel(p) }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3.5 text-center text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">{{ p.min_stock }} {{ p.unit }}</td>
+                    <td class="px-5 py-3.5 text-center font-medium text-slate-700 dark:text-slate-300">¥{{ Number(p.cost_price || 0).toFixed(2) }}</td>
+                    <td class="px-5 py-3.5 text-center">
+                      <span v-if="p.location_code" class="inline-flex px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/5">
+                        {{ p.location_code }}
+                      </span>
+                      <span v-else class="text-xs text-slate-400 dark:text-slate-500">—</span>
+                    </td>
+                    <td class="px-5 py-3.5 pr-5">
+                      <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                        <!-- 入库 -->
+                        <button @click="openStockIn(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer">
+                          +入库
+                        </button>
+                        <!-- 出库 -->
+                        <button @click="openStockOut(p)" :disabled="p.current_stock === 0" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer">
+                          -出库
+                        </button>
+                        <!-- 调整 -->
+                        <button @click="openStockAdjust(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer">
+                          调整
+                        </button>
+                        <span class="mx-0.5 text-xs" style="color: var(--border-strong);">|</span>
+                        <!-- 编辑 -->
+                        <button @click="openEdit(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
+                          编辑
+                        </button>
+                        <!-- 删除 -->
+                        <button @click="openDelete(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all cursor-pointer">
+                          删除
+                        </button>
+                        <span class="mx-0.5 text-xs" style="color: var(--border-strong);">|</span>
+                        <!-- 打印 -->
+                        <button @click="openLabelPrint(p)" class="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20 hover:bg-sky-100 dark:hover:bg-sky-500/20 active:scale-95 transition-all cursor-pointer">
+                          标签
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </draggable>
+            </table>
+          </div>
         </div>
       </div>
 
       <!-- 平板/手机 卡片列表 (< lg) -->
       <div v-if="!loading && products.length > 0" class="lg:hidden p-4 space-y-3">
-        <div
-          v-for="p in products"
-          :key="p.id"
-          class="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden"
+        <draggable
+          v-model="products"
+          item-key="id"
+          handle=".drag-handle"
+          :animation="250"
+          ghost-class="drag-ghost"
+          chosen-class="drag-chosen"
+          drag-class="drag-dragging"
+          @end="onDragEnd"
+          class="space-y-3"
         >
-          <!-- 卡片头部：SKU + 状态 -->
-          <div class="px-4 pt-4 pb-3 flex items-center justify-between gap-2">
-            <span class="inline-flex px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5 shrink-0">
-              {{ p.sku_code }}
-            </span>
-            <span class="text-xs px-2 py-1 rounded-lg font-medium shrink-0" :class="stockStatus(p) === 'zero' ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400' : (stockStatus(p) === 'warn' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400')">
-              {{ stockLabel(p) }}
-            </span>
-          </div>
-
-          <!-- 商品名 -->
-          <div class="px-4 pb-3">
-            <p class="text-sm font-semibold text-slate-900 dark:text-white leading-snug">{{ p.name }}</p>
-            <div v-if="p.remark" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{{ p.remark }}</div>
-          </div>
-
-          <!-- 数据指标 -->
-          <div class="px-4 pb-3 flex items-center gap-4">
-            <!-- 库存 -->
-            <div class="text-center">
-              <p class="text-xl font-bold leading-none" :class="stockStatus(p) === 'zero' ? 'text-rose-500' : (stockStatus(p) === 'warn' ? 'text-amber-500' : 'text-slate-900 dark:text-white')">{{ p.current_stock }}</p>
-              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{{ p.unit }}</p>
-            </div>
-            <div class="w-px h-8" style="background-color: var(--border-default);"></div>
-            <!-- 预警 -->
-            <div class="text-center">
-              <p class="text-sm font-medium text-slate-600 dark:text-slate-300 leading-none">{{ p.min_stock }}</p>
-              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">预警</p>
-            </div>
-            <div class="w-px h-8" style="background-color: var(--border-default);"></div>
-            <!-- 单价 -->
-            <div class="text-center">
-              <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">¥{{ Number(p.cost_price || 0).toFixed(2) }}</p>
-              <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">单价</p>
-            </div>
-          </div>
-
-          <!-- 大类 + 库位 -->
-          <div class="px-4 pb-3 flex items-center gap-2 flex-wrap">
-            <span class="inline-flex px-2 py-0.5 text-xs rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">{{ p.category_name }}</span>
-            <span v-if="p.location_code" class="inline-flex px-2 py-0.5 text-xs rounded-md bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/5 font-mono">
-              <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-0.5">
-                <path d="m3 6 6-3 6 3 6-3 3z"/><path d="m15 6 6-3 6 3 6-3 3z"/>
-              </svg>
-              {{ p.location_code }}
-            </span>
-          </div>
-
-          <!-- 操作按钮行 -->
-          <div class="px-4 pb-4 flex items-center gap-2">
-            <button @click="openStockIn(p)" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer">
-              +入库
-            </button>
-            <button @click="openStockOut(p)" :disabled="p.current_stock === 0" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-              -出库
-            </button>
-            <button @click="openStockAdjust(p)" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer">
-              调整
-            </button>
-            <button @click="openEdit(p)" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
-              编辑
-            </button>
-            <!-- 更多操作 -->
-            <div class="relative">
-              <button @click.stop="toggleMobileMenu(p.id)" class="action-menu-btn w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-all cursor-pointer">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
-                </svg>
-              </button>
-              <!-- 下拉菜单 -->
-              <Transition name="dropdown">
-                <div
-                  v-if="mobileActionMenu === p.id"
-                  class="action-menu-dropdown absolute right-0 top-full mt-1.5 z-50 w-44 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl shadow-black/10 overflow-hidden"
-                >
-                  <div class="p-1.5 space-y-0.5">
-                    <button @click="openLabelPrint(p); mobileActionMenu = null" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium rounded-xl text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-500/10 transition-colors cursor-pointer">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>
-                      </svg>
-                      打印标签
-                    </button>
-                    <div class="h-px bg-slate-100 dark:bg-white/5 my-1"></div>
-                    <button @click="openDelete(p)" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-                      </svg>
-                      删除商品
-                    </button>
-                  </div>
+          <template #item="{ element: p }">
+            <div
+              class="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden"
+            >
+              <!-- 卡片头部：SKU + 状态 + 拖拽手柄 -->
+              <div class="px-4 pt-4 pb-3 flex items-center justify-between gap-2">
+                <div class="drag-handle cursor-grab active:cursor-grabbing p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors" title="拖动排序">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                    <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+                  </svg>
                 </div>
-              </Transition>
+                <span class="inline-flex px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5 shrink-0">
+                  {{ p.sku_code }}
+                </span>
+                <span class="text-xs px-2 py-1 rounded-lg font-medium shrink-0" :class="stockStatus(p) === 'zero' ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400' : (stockStatus(p) === 'warn' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400')">
+                  {{ stockLabel(p) }}
+                </span>
+              </div>
+
+              <!-- 商品名 -->
+              <div class="px-4 pb-3">
+                <p class="text-sm font-semibold text-slate-900 dark:text-white leading-snug">{{ p.name }}</p>
+                <div v-if="p.remark" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{{ p.remark }}</div>
+              </div>
+
+              <!-- 数据指标 -->
+              <div class="px-4 pb-3 flex items-center gap-4">
+                <!-- 库存 -->
+                <div class="text-center">
+                  <p class="text-xl font-bold leading-none" :class="stockStatus(p) === 'zero' ? 'text-rose-500' : (stockStatus(p) === 'warn' ? 'text-amber-500' : 'text-slate-900 dark:text-white')">{{ p.current_stock }}</p>
+                  <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">{{ p.unit }}</p>
+                </div>
+                <div class="w-px h-8" style="background-color: var(--border-default);"></div>
+                <!-- 预警 -->
+                <div class="text-center">
+                  <p class="text-sm font-medium text-slate-600 dark:text-slate-300 leading-none">{{ p.min_stock }}</p>
+                  <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">预警</p>
+                </div>
+                <div class="w-px h-8" style="background-color: var(--border-default);"></div>
+                <!-- 单价 -->
+                <div class="text-center">
+                  <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">¥{{ Number(p.cost_price || 0).toFixed(2) }}</p>
+                  <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">单价</p>
+                </div>
+              </div>
+
+              <!-- 大类 + 库位 -->
+              <div class="px-4 pb-3 flex items-center gap-2 flex-wrap">
+                <span class="inline-flex px-2 py-0.5 text-xs rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">{{ p.category_name }}</span>
+                <span v-if="p.location_code" class="inline-flex px-2 py-0.5 text-xs rounded-md bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/5 font-mono">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0 mr-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m3 6 6-3 6 3 6-3 3z"/><path d="m15 6 6-3 6 3 6-3 3z"/>
+                  </svg>
+                  {{ p.location_code }}
+                </span>
+              </div>
+
+              <!-- 操作按钮行 -->
+              <div class="px-4 pb-4 flex items-center gap-2">
+                <button @click="openStockIn(p)" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer">
+                  +入库
+                </button>
+                <button @click="openStockOut(p)" :disabled="p.current_stock === 0" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                  -出库
+                </button>
+                <button @click="openStockAdjust(p)" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer">
+                  调整
+                </button>
+                <button @click="openEdit(p)" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
+                  编辑
+                </button>
+                <!-- 更多操作 -->
+                <div class="relative">
+                  <button @click.stop="toggleMobileMenu(p.id)" class="action-menu-btn w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-all cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                    </svg>
+                  </button>
+                  <!-- 下拉菜单 -->
+                  <Transition name="dropdown">
+                    <div
+                      v-if="mobileActionMenu === p.id"
+                      class="action-menu-dropdown absolute right-0 top-full mt-1.5 z-50 w-44 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl shadow-black/10 overflow-hidden"
+                    >
+                      <div class="p-1.5 space-y-0.5">
+                        <button @click="openLabelPrint(p); mobileActionMenu = null" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium rounded-xl text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-500/10 transition-colors cursor-pointer">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/>
+                          </svg>
+                          打印标签
+                        </button>
+                        <div class="h-px bg-slate-100 dark:bg-white/5 my-1"></div>
+                        <button @click="openDelete(p)" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                          </svg>
+                          删除商品
+                        </button>
+                      </div>
+                    </div>
+                  </Transition>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </template>
+        </draggable>
       </div>
     </div>
 
@@ -482,7 +560,7 @@ onMounted(() => {
           <div class="p-6">
             <div class="flex items-start gap-4">
               <div class="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
                 </svg>
               </div>
@@ -494,7 +572,7 @@ onMounted(() => {
               </div>
             </div>
           </div>
-          <div class="px-6 pb-6 flex items-center gap-3">
+          <div class="px-6 pb-6 flex items-center gap-3 pb-safe">
             <button @click="confirmDelete = false" class="flex-1 py-2.5 text-sm font-medium rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
               取消
             </button>
@@ -509,17 +587,36 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.dropdown-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.dropdown-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
-.dropdown-enter-from { opacity: 0; transform: translateY(-4px) scale(0.97); }
-.dropdown-leave-to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+/* ============================================= */
+/* 拖拽样式 - 简洁高性能版                        */
+/* ============================================= */
 
-.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.2s ease; }
-.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
+/* 原位置占位符 - 简洁的虚线边框 */
+.drag-ghost {
+  opacity: 1 !important;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.02)) !important;
+  border: 2px dashed rgba(99, 102, 241, 0.3) !important;
+}
 
-.scale-in { animation: scale-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
-@keyframes scale-in {
-  0%   { opacity: 0; transform: scale(0.94); }
-  100% { opacity: 1; transform: scale(1); }
+.drag-ghost td {
+  visibility: hidden !important;
+}
+
+/* 选中开始拖动时 */
+.is-drag-chosen {
+  cursor: grabbing !important;
+}
+
+/* 正在拖动的行 - 简洁高亮 */
+.is-drag-dragging {
+  background: rgba(99, 102, 241, 0.15) !important;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.25) !important;
+  transform: scale(1.01) !important;
+}
+
+/* 拖动手柄悬停 */
+.drag-handle:hover {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border-radius: 6px;
 }
 </style>

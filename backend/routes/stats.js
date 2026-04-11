@@ -12,11 +12,14 @@ function formatProduct(p) {
 }
 
 router.get('/', (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  // 使用本地日期而不是 UTC，避免时区差异
+  const pad = n => String(n).padStart(2, '0');
+  const now = new Date();
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
   const totalProducts = getAll('SELECT COUNT(*) as count FROM products')[0]?.count || 0;
   const stockStats = getAll('SELECT SUM(current_stock) as total, SUM(current_stock * cost_price) as value FROM products')[0] || {};
-  const lowStockProducts = getAll('SELECT COUNT(*) as count FROM products WHERE current_stock <= min_stock AND current_stock > 0')[0]?.count || 0;
+  const lowStockProducts = getAll('SELECT COUNT(*) as count FROM products WHERE current_stock < min_stock AND current_stock > 0')[0]?.count || 0;
   const zeroStockProducts = getAll('SELECT COUNT(*) as count FROM products WHERE current_stock = 0')[0]?.count || 0;
 
   const todayIn = getAll(
@@ -37,20 +40,27 @@ router.get('/', (req, res) => {
     ORDER BY c.id
   `);
 
-  const byLocation = getAll(`
-    SELECT location_code, COUNT(*) as count, SUM(current_stock) as total_stock
-    FROM products
-    WHERE location_code IS NOT NULL AND location_code != ''
-    GROUP BY location_code
-    ORDER BY location_code
+  // 30天出库排行榜
+  const thirtyDayOutboundRank = getAll(`
+    SELECT
+      l.product_id,
+      l.product_name,
+      l.category_name,
+      SUM(ABS(l.quantity)) as total_out_quantity
+    FROM inventory_logs l
+    WHERE l.type = 'out'
+      AND l.created_at >= datetime('now', '-30 days')
+    GROUP BY l.product_id, l.product_name, l.category_name
+    ORDER BY total_out_quantity DESC
+    LIMIT 20
   `);
 
-  // 低库存预警产品列表（<= min_stock，包括零库存）
+  // 低库存预警产品列表（< min_stock，不包括等于的情况）
   const lowStockList = getAll(`
     SELECT p.*, c.name as category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.current_stock <= p.min_stock
+    WHERE p.current_stock < p.min_stock
     ORDER BY p.current_stock ASC, p.id ASC
     LIMIT 50
   `);
@@ -66,7 +76,7 @@ router.get('/', (req, res) => {
       todayIn,
       todayOut,
       byCategory,
-      byLocation,
+      thirtyDayOutboundRank,
       lowStockList: lowStockList.map(formatProduct),
     }
   });
@@ -77,7 +87,7 @@ router.get('/low-stock', (req, res) => {
     SELECT p.*, c.name as category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.current_stock <= p.min_stock
+    WHERE p.current_stock < p.min_stock
     ORDER BY p.current_stock ASC, p.id ASC
   `);
   res.json({ success: true, data: products.map(formatProduct) });

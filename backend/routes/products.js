@@ -24,6 +24,17 @@ function generateSkuCode(categoryName) {
   return `${prefix}-${year}${month}-${random}`;
 }
 
+/**
+ * 获取本地时间的 SQLite DATETIME 格式字符串
+ * 解决 SQLite CURRENT_TIMESTAMP 使用 UTC 时间的问题
+ */
+function localDateTime() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+         `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 function formatProduct(p) {
   if (!p) return null;
   let attrs = p.attributes;
@@ -46,7 +57,7 @@ router.get('/', (req, res) => {
     const kw = `%${keyword}%`;
     params.push(kw, kw, kw);
   }
-  sql += ' ORDER BY p.id DESC';
+  sql += ' ORDER BY p.sort_order ASC, p.created_at DESC';
   const products = getAll(sql, params);
   res.json({ success: true, data: products.map(formatProduct) });
 });
@@ -121,11 +132,18 @@ router.post('/', (req, res) => {
   );
 
   if (result.success) {
-    // 新增商品时，无论初始库存是否为 0，都记录一条日志，并保存商品快照
-    runInsert(
-      'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [result.lastId, 'add', initStock, 0, initStock, '新增商品', 'system', name.trim(), category.name]
-    );
+    // 新增商品时，无论初始库存是否为 0，都记录一条日志，使用本地时间
+    try {
+      const logResult = runInsert(
+        'INSERT INTO inventory_logs (product_id, type, quantity, stock_before, stock_after, note, operator, product_name, category_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [result.lastId, 'add', initStock, 0, initStock, '新增商品', 'system', name.trim(), category.name, localDateTime()]
+      );
+      if (!logResult.success) {
+        console.error('[products] 写入库存日志失败:', logResult.error);
+      }
+    } catch (logErr) {
+      console.error('[products] 写入库存日志异常:', logErr);
+    }
     const newProduct = getOne('SELECT * FROM products WHERE id = ?', [result.lastId]);
     res.json({ success: true, data: formatProduct(newProduct), sku_code });
   } else {
@@ -196,6 +214,40 @@ router.post('/reset-all', (req, res) => {
     }
   });
   res.json({ success: true, message: `已修复 ${fixed} 条损坏数据` });
+});
+
+/**
+ * POST /api/products/reorder
+ * 批量更新商品排序
+ * 请求体: { items: [{ id: number, sort_order: number }, ...] }
+ */
+router.post('/reorder', (req, res) => {
+  const { items } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, error: '缺少 items 参数或数组为空' });
+  }
+
+  // 参数化验证：确保每个 item 都是有效的数字
+  for (const item of items) {
+    if (typeof item.id !== 'number' || typeof item.sort_order !== 'number') {
+      return res.status(400).json({ success: false, error: '每个 item 必须包含有效的 id 和 sort_order' });
+    }
+  }
+
+  // 批量更新每个商品的 sort_order
+  let updated = 0;
+  for (const item of items) {
+    const result = runQuery(
+      'UPDATE products SET sort_order = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [item.sort_order, item.id]
+    );
+    if (result.success) {
+      updated++;
+    }
+  }
+
+  res.json({ success: true, message: '排序已保存', updated });
 });
 
 module.exports = router;

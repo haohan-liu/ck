@@ -14,6 +14,15 @@ const MAX_FIELDS = 8
 
 const form = ref({ id: null, name: '', template_schema: [''] })
 
+// 时间格式化函数 - 使用本地时间
+function formatTime(t) {
+  if (!t) return '-'
+  const d = new Date(t)
+  if (isNaN(d.getTime())) return String(t).replace('T', ' ').slice(0, 19) || '-'
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 function openAddModal() {
   modalMode.value = 'add'
   form.value = { id: null, name: '', template_schema: [''] }
@@ -121,7 +130,7 @@ onMounted(loadCategories)
                  hover:from-indigo-600 hover:to-indigo-700
                  active:scale-95 transition-all duration-200 cursor-pointer"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 5v14"/><path d="M5 12h14"/>
           </svg>
           新增大类
@@ -135,7 +144,7 @@ onMounted(loadCategories)
       <!-- 错误提示 -->
       <div v-if="error && !showModal && !confirmDelete" class="mx-4 lg:mx-6 mt-4 p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center gap-3">
         <div class="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
           </svg>
         </div>
@@ -154,7 +163,7 @@ onMounted(loadCategories)
       <!-- 空状态 -->
       <div v-else-if="categories.length === 0" class="flex flex-col items-center justify-center py-20">
         <div class="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
           </svg>
         </div>
@@ -170,7 +179,7 @@ onMounted(loadCategories)
               <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
                 <th class="px-6 py-3.5 text-left font-medium">大类名称</th>
                 <th class="px-6 py-3.5 text-left font-medium">规格模板字段</th>
-                <th class="px-6 py-3.5 text-left font-medium">创建时间</th>
+                <th class="px-6 py-3.5 text-center font-medium">创建时间</th>
                 <th class="px-6 py-3.5 text-right font-medium pr-5">操作</th>
               </tr>
             </thead>
@@ -179,8 +188,10 @@ onMounted(loadCategories)
                 <td class="px-6 py-4">
                   <div class="flex items-center gap-3">
                     <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                        <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                        <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
                       </svg>
                     </div>
                     <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ cat.name }}</span>
@@ -198,8 +209,8 @@ onMounted(loadCategories)
                     <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
                   </div>
                 </td>
-                <td class="px-6 py-4 text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap font-mono">
-                  {{ cat.created_at ? cat.created_at.replace('T', ' ').slice(0, 19) : '-' }}
+                <td class="px-6 py-4 text-center text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap font-mono">
+                  {{ cat.created_at ? formatTime(cat.created_at) : '-' }}
                 </td>
                 <td class="px-6 py-4 pr-5">
                   <div class="flex items-center justify-end gap-2">
@@ -227,8 +238,10 @@ onMounted(loadCategories)
           <div class="flex items-start justify-between gap-3 mb-3">
             <div class="flex items-center gap-3">
               <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                  <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                  <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
                 </svg>
               </div>
               <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ cat.name }}</span>
@@ -242,7 +255,7 @@ onMounted(loadCategories)
             <span v-for="(field, fi) in (cat.template_schema || [])" :key="fi" class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">{{ field }}</span>
             <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
           </div>
-          <p class="text-xs text-slate-400 dark:text-slate-500 mt-2 font-mono">创建于 {{ cat.created_at ? cat.created_at.replace('T', ' ').slice(0, 16) : '-' }}</p>
+          <p class="text-xs text-slate-400 dark:text-slate-500 mt-2 font-mono">创建于 {{ cat.created_at ? formatTime(cat.created_at).slice(0, 16) : '-' }}</p>
         </div>
       </div>
     </div>
@@ -259,14 +272,16 @@ onMounted(loadCategories)
           <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/5 flex-shrink-0">
             <div class="flex items-center gap-3">
               <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                  <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                  <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
                 </svg>
               </div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white">{{ modalMode === 'add' ? '新增大类' : '编辑大类' }}</h3>
             </div>
             <button @click="showModal = false" class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
               </svg>
             </button>
@@ -316,7 +331,7 @@ onMounted(loadCategories)
                     :disabled="form.template_schema.length <= 1"
                     class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
                     </svg>
                   </button>
@@ -331,7 +346,7 @@ onMounted(loadCategories)
                        hover:border-indigo-400 hover:text-indigo-500
                        active:scale-95 transition-all cursor-pointer"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12 5v14"/><path d="M5 12h14"/>
                 </svg>
                 添加字段
@@ -340,7 +355,7 @@ onMounted(loadCategories)
 
             <!-- 错误提示 -->
             <div v-if="error" class="flex items-start gap-2.5 p-3.5 rounded-xl text-sm bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-300">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 shrink-0 mt-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
               </svg>
               {{ error }}
@@ -348,7 +363,7 @@ onMounted(loadCategories)
           </div>
 
           <!-- 底部按钮 -->
-          <div class="px-6 py-4 border-t border-slate-100 dark:border-white/5 flex items-center gap-3 flex-shrink-0">
+          <div class="px-6 py-4 border-t border-slate-100 dark:border-white/5 flex items-center gap-3 flex-shrink-0 pb-safe">
             <button @click="showModal = false" class="flex-1 py-2.5 text-sm font-medium rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
               取消
             </button>
@@ -368,7 +383,7 @@ onMounted(loadCategories)
           <div class="p-6">
             <div class="flex items-start gap-4">
               <div class="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
                 </svg>
               </div>
@@ -378,7 +393,7 @@ onMounted(loadCategories)
               </div>
             </div>
           </div>
-          <div class="px-6 pb-6 flex items-center gap-3">
+          <div class="px-6 pb-6 flex items-center gap-3 pb-safe">
             <button @click="confirmDelete = false" class="flex-1 py-2.5 text-sm font-medium rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">取消</button>
             <button @click="confirmDeleteCategory" class="flex-1 py-2.5 text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-rose-500 to-rose-600 shadow-md shadow-rose-500/20 hover:from-rose-600 hover:to-rose-700 active:scale-95 transition-all cursor-pointer">确认删除</button>
           </div>

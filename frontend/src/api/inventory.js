@@ -31,3 +31,8 @@ export function scanStockOut(data) {
 
 // 别名兼容
 export const getInventoryLogs = getLogs
+
+// 批量删除日志
+export function deleteLogs(data) {
+  return api.delete('/inventory/logs', { data })
+}

@@ -27,16 +27,16 @@
   --border-default: #182438;
   --border-strong: #1f3050;
   --border-subtle: #0d1828;
-  --border-accent: rgba(16, 185, 129, 0.35);
+  --border-accent: rgba(99, 102, 241, 0.35);
 
-  /* 主题色（翡翠绿） */
-  --accent:         #10b981;
-  --accent-hover:   #059669;
-  --accent-active:  #047857;
-  --accent-text:    #34d399;
-  --accent-bg:      rgba(16, 185, 129, 0.1);
-  --accent-glow:    rgba(16, 185, 129, 0.2);
-  --accent-border:  rgba(16, 185, 129, 0.3);
+  /* 主题色（蓝紫色） */
+  --accent:         #6366f1;
+  --accent-hover:   #4f46e5;
+  --accent-active:  #4338ca;
+  --accent-text:    #818cf8;
+  --accent-bg:      rgba(99, 102, 241, 0.1);
+  --accent-glow:    rgba(99, 102, 241, 0.2);
+  --accent-border:  rgba(99, 102, 241, 0.3);
 
   /* 状态色 */
   --success:        #10b981;
@@ -52,19 +52,29 @@
   --info-bg:        rgba(56, 189, 248, 0.1);
   --info-border:    rgba(56, 189, 248, 0.25);
 
+  /* 蓝紫渐变主题色（用于筛选/搜索栏） */
+  --filter-accent:     #6366f1;
+  --filter-accent-light: #818cf8;
+  --filter-bg:         rgba(99, 102, 241, 0.1);
+  --filter-glow:       rgba(99, 102, 241, 0.25);
+  --filter-border:     rgba(99, 102, 241, 0.3);
+  --filter-text:       #818cf8;
+  --filter-placeholder: rgba(99, 102, 241, 0.5);
+
   /* 出库/入库 状态色 */
   --out-color:      #f87171;
   --out-bg:         rgba(248, 113, 113, 0.1);
   --out-border:     rgba(248, 113, 113, 0.25);
-  --in-color:       #34d399;
-  --in-bg:          rgba(52, 211, 153, 0.1);
-  --in-border:      rgba(52, 211, 153, 0.25);
+  --in-color:       #818cf8;
+  --in-bg:          rgba(129, 140, 248, 0.1);
+  --in-border:      rgba(129, 140, 248, 0.25);
 
   /* 输入控件 */
   --input-bg:       #0c1526;
   --input-border:   #1e3048;
   --input-hover:    #243d60;
   --input-focus:    var(--accent);
+  --hover-bg:       rgba(255, 255, 255, 0.05);
 
   /* 弹窗/卡片 */
   --modal-bg:       #0c1526;
@@ -83,8 +93,8 @@
   --bottomnav-bg:  rgba(12, 21, 38, 0.95);
 
   /* 扫描线主题色 */
-  --scan-accent:   #10b981;
-  --scan-glow:     rgba(16, 185, 129, 0.5);
+  --scan-accent:   #6366f1;
+  --scan-glow:     rgba(99, 102, 241, 0.5);
   --scan-accent-rgb: 99, 102, 241;
 }
 
@@ -106,16 +116,16 @@
   --border-default: #d6e2f0;
   --border-strong:  #a8bdd4;
   --border-subtle:  #edf1f7;
-  --border-accent: rgba(5, 150, 105, 0.3);
+  --border-accent: rgba(99, 102, 241, 0.3);
 
   /* 主题色 */
-  --accent:         #059669;
-  --accent-hover:   #10b981;
-  --accent-active:  #047857;
-  --accent-text:    #047857;
-  --accent-bg:      rgba(5, 150, 105, 0.07);
-  --accent-glow:    rgba(5, 150, 105, 0.15);
-  --accent-border:  rgba(5, 150, 105, 0.25);
+  --accent:         #6366f1;
+  --accent-hover:   #818cf8;
+  --accent-active:  #4f46e5;
+  --accent-text:    #4f46e5;
+  --accent-bg:      rgba(99, 102, 241, 0.07);
+  --accent-glow:    rgba(99, 102, 241, 0.15);
+  --accent-border:  rgba(99, 102, 241, 0.25);
 
   /* 状态色 */
   --success:        #059669;
@@ -135,15 +145,25 @@
   --out-color:      #dc2626;
   --out-bg:         rgba(220, 38, 38, 0.07);
   --out-border:     rgba(220, 38, 38, 0.25);
-  --in-color:       #059669;
-  --in-bg:          rgba(5, 150, 105, 0.07);
-  --in-border:      rgba(5, 150, 105, 0.25);
+  --in-color:       #6366f1;
+  --in-bg:          rgba(99, 102, 241, 0.07);
+  --in-border:      rgba(99, 102, 241, 0.25);
 
   /* 输入控件 */
   --input-bg:       #ffffff;
   --input-border:   #cdd8e8;
   --input-hover:    #a8bdd4;
   --input-focus:    var(--accent);
+  --hover-bg:       rgba(0, 0, 0, 0.04);
+
+  /* 蓝紫渐变主题色（用于筛选/搜索栏） */
+  --filter-accent:     #6366f1;
+  --filter-accent-light: #818cf8;
+  --filter-bg:         rgba(99, 102, 241, 0.08);
+  --filter-glow:       rgba(99, 102, 241, 0.2);
+  --filter-border:     rgba(99, 102, 241, 0.25);
+  --filter-text:       #6366f1;
+  --filter-placeholder: rgba(99, 102, 241, 0.45);
 
   /* 弹窗/卡片 */
   --modal-bg:       #ffffff;
@@ -162,8 +182,8 @@
   --bottomnav-bg:   rgba(255, 255, 255, 0.95);
 
   /* 扫描线 */
-  --scan-accent:   #059669;
-  --scan-glow:     rgba(5, 150, 105, 0.4);
+  --scan-accent:   #6366f1;
+  --scan-glow:     rgba(99, 102, 241, 0.4);
   --scan-accent-rgb: 99, 102, 241;
 }
 

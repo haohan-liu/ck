@@ -119,16 +119,20 @@ function clearDebounce() {
 function validate() {
   formError.value = ''
   const qty = Number(quantity.value)
-  if (!qty || qty <= 0 || !Number.isInteger(qty)) {
-    formError.value = '数量必须为正整数'
+  if (!qty && qty !== 0) {
+    formError.value = '请输入有效数量'
+    return false
+  }
+  if (qty < 0) {
+    formError.value = '库存数量不能为负数'
     return false
   }
   if (props.mode === 'out' && qty > (props.product?.current_stock || 0)) {
     formError.value = '出库数量不能超过当前库存'
     return false
   }
-  if (props.mode === 'adjust' && qty < 0) {
-    formError.value = '调整后库存不能为负数'
+  if (props.mode === 'out' && !Number.isInteger(qty)) {
+    formError.value = '出库数量必须为整数'
     return false
   }
   return true
@@ -189,13 +193,22 @@ async function submit() {
         >
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" :style="{ background: config.gradient + '20' }">
-              <svg v-if="mode === 'in'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ color: config.textColor }">
+              <svg v-if="mode === 'in'"
+                xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                :style="{ color: config.textColor }"
+              >
                 <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
               </svg>
-              <svg v-else-if="mode === 'out'" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ color: config.textColor }">
+              <svg v-else-if="mode === 'out'"
+                xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                :style="{ color: config.textColor }"
+              >
                 <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
               </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :style="{ color: config.textColor }">
+              <svg v-else
+                xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                :style="{ color: config.textColor }"
+              >
                 <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
               </svg>
             </div>
@@ -208,7 +221,7 @@ async function submit() {
             @click="$emit('close')"
             class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
             </svg>
           </button>
@@ -227,7 +240,7 @@ async function submit() {
               </div>
               <div class="flex flex-col items-center">
                 <div class="w-px h-5 bg-slate-200 dark:bg-white/10 mb-1"></div>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300 dark:text-slate-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="m9 18 6-6-6-6"/>
                 </svg>
                 <div class="w-px h-5 bg-slate-200 dark:bg-white/10 mt-1"></div>
@@ -265,12 +278,12 @@ async function submit() {
               @keyup.enter="submit"
             />
             <p v-if="outOverWarning" class="text-xs text-rose-500 mt-1.5 flex items-center gap-1">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
               </svg>
               {{ outOverWarning }}
             </p>
-            <p v-if="mode === 'adjust' && quantity > 0" class="text-xs mt-1.5" style="color: var(--warning);">{{ adjustPreview }}</p>
+            <p v-if="mode === 'adjust' && quantity !== '' && quantity !== null" class="text-xs mt-1.5" style="color: var(--warning);">{{ adjustPreview }}</p>
           </div>
 
           <!-- 运单号（仅出库） -->
@@ -282,7 +295,7 @@ async function submit() {
               </label>
               <div class="relative">
                 <div class="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
                   </svg>
                 </div>
@@ -296,7 +309,7 @@ async function submit() {
                 />
               </div>
               <p v-if="trackingHint" class="text-xs mt-1.5 flex items-center gap-1" style="color: var(--info);">
-                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
                 </svg>
                 {{ trackingHint }}
@@ -319,7 +332,7 @@ async function submit() {
 
           <!-- 错误 -->
           <div v-if="formError" class="flex items-start gap-2.5 p-3.5 rounded-xl text-sm bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-300">
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 shrink-0 mt-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
             </svg>
             {{ formError }}
@@ -327,7 +340,7 @@ async function submit() {
 
           <!-- 成功 -->
           <div v-if="successMsg" class="flex items-center gap-2.5 p-3.5 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-300">
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>
             </svg>
             {{ successMsg }}
@@ -348,9 +361,9 @@ async function submit() {
           </button>
           <button
             @click="submit"
-            :disabled="submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0"
+            :disabled="submitting || isDebouncing || !!formError || !!outOverWarning || (mode !== 'adjust' && quantity <= 0)"
             class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed active:scale-[0.98]"
-            :style="(submitting || isDebouncing || !!formError || !!outOverWarning || quantity <= 0) ? '' : `background: ${config.gradient}; box-shadow: 0 4px 14px ${config.glow};`"
+            :style="(submitting || isDebouncing || !!formError || !!outOverWarning || (mode !== 'adjust' && quantity <= 0)) ? '' : `background: ${config.gradient}; box-shadow: 0 4px 14px ${config.glow};`"
           >
             <span v-if="submitting" class="flex items-center justify-center gap-2">
               <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
