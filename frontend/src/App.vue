@@ -66,7 +66,7 @@ function isActive(path) {
 <template>
   <!-- 全屏背景层 -->
   <div
-    class="h-screen overflow-hidden flex"
+    class="h-[100dvh] w-full overflow-hidden flex"
     :data-theme="isDark ? 'dark' : 'light'"
   >
     <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -175,7 +175,7 @@ function isActive(path) {
           </button>
 
           <div class="pt-3 text-center text-xs text-slate-400 dark:text-slate-500">
-            &copy; 2026 跨境汽配小件
+            &copy; 2026 浩涵 All Rights Reserved
           </div>
         </div>
       </aside>
@@ -194,7 +194,7 @@ function isActive(path) {
     <!-- ═══════════════════════════════════════════════════════════════ -->
     <!-- 移动端布局 (<1024px) — 顶部栏 + 底部 Tab + 主内容       -->
     <!-- ═══════════════════════════════════════════════════════════════ -->
-    <div class="flex flex-col flex-1 min-w-0 lg:hidden">
+    <div class="flex flex-col flex-1 min-w-0 lg:hidden h-full overflow-hidden">
 
       <!-- 顶部栏 -->
       <header
@@ -375,7 +375,7 @@ function isActive(path) {
               {{ isDark ? '亮色模式' : '暗色模式' }}
             </button>
             <div class="pt-2 text-center text-xs text-slate-400 dark:text-slate-500">
-              &copy; 2026 跨境汽配小件
+              &copy; 2026 浩涵 All Rights Reserved
             </div>
           </div>
         </div>

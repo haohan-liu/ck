@@ -19,3 +19,7 @@ export function updateCategory(id, data) {
 export function deleteCategory(id) {
   return api.delete(`/categories/${id}`)
 }
+
+export function updateCategoryOrder(items) {
+  return api.post('/categories/reorder', { items })
+}

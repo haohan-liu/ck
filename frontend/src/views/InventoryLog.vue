@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { getLogs } from '../api/inventory.js'
+import { getLogs, deleteLogs } from '../api/inventory.js'
+import { getCategories } from '../api/categories.js'
+import { getProducts } from '../api/products.js'
 import { MyFilterSelect, MyFilterSearch, MyModal, MyMessage } from '../components/ui/index.js'
 import ExcelJS from 'exceljs'
 
@@ -70,7 +72,6 @@ async function loadLogs() {
     const params = {}
     if (filterType.value) params.type = filterType.value
     if (filterKeyword.value.trim()) params.keyword = filterKeyword.value.trim()
-    // 分页参数
     params.limit = pageSize.value
     params.offset = (currentPage.value - 1) * pageSize.value
 
@@ -78,11 +79,9 @@ async function loadLogs() {
     logs.value = res.data.data || []
     total.value = res.data.total || 0
 
-    // 重新加载后清空选择
     selectedIds.value.clear()
   } catch (e) {
-    error.value = '加载库存日志失败'
-    console.error(e)
+    MyMessage.error(e.response?.data?.error || '加载库存日志失败')
   } finally {
     loading.value = false
   }
@@ -183,40 +182,30 @@ async function batchDeleteLogs() {
 
 async function confirmBatchDelete() {
   // 先备份要删除的 IDs
-  const idsToDelete = Array.from(selectedIds.value)
-  const currentLogsCount = logs.value.length
+    const idsToDelete = Array.from(selectedIds.value)
+    const currentLogsCount = logs.value.length
+    showDeleteModal.value = false
 
-  // 关闭弹窗
-  showDeleteModal.value = false
+    if (idsToDelete.length === 0) return
 
-  if (idsToDelete.length === 0) {
-    return
-  }
+    try {
+      const { deleteLogs } = await import('../api/inventory.js')
+      await deleteLogs({ ids: idsToDelete })
 
-  // 先显示成功提示（让用户立即看到反馈）
-  MyMessage.success(`已经删除 ${idsToDelete.length} 条日志`)
+      selectMode.value = false
+      selectedIds.value.clear()
 
-  try {
-    const { deleteLogs } = await import('../api/inventory.js')
-    await deleteLogs({ ids: idsToDelete })
+      if (currentLogsCount === idsToDelete.length && currentPage.value > 1) {
+        currentPage.value--
+      }
 
-    // 关闭选择模式并清空
-    selectMode.value = false
-    selectedIds.value.clear()
-
-    // 如果删除的是最后一页的全部数据，需要回退一页
-    if (currentLogsCount === idsToDelete.length && currentPage.value > 1) {
-      currentPage.value--
+      MyMessage.success(`已删除 ${idsToDelete.length} 条日志`)
+      await loadLogs()
+    } catch (e) {
+      selectMode.value = false
+      selectedIds.value.clear()
+      MyMessage.error('批量删除失败：' + (e.response?.data?.error || '未知错误'))
     }
-
-    // 刷新数据
-    await loadLogs()
-  } catch (e) {
-    // 即使出错也要关闭选择模式
-    selectMode.value = false
-    selectedIds.value.clear()
-    MyMessage.error('批量删除失败：' + (e.message || '未知错误'))
-  }
 }
 
 // ─── Excel 导出 ─────────────────────────────────────────────────────────────
@@ -226,100 +215,482 @@ function handleExportClick() {
   showExportModal.value = true
 }
 
+// ─── 工具函数：通用样式定义 ────────────────────────────────────────────────────
+function getStyleConfig() {
+  const thin = { style: 'thin', color: { argb: 'FFB8BCC8' } }
+  const thick = { style: 'medium', color: { argb: 'FF8B95A3' } }
+  return {
+    thinBorder: { top: thin, left: thin, bottom: thin, right: thin },
+    thickBorder: { top: thick, left: thick, bottom: thick, right: thick },
+    alignCenter: { horizontal: 'center', vertical: 'middle', wrapText: false },
+    alignCenterWrap: { horizontal: 'center', vertical: 'middle', wrapText: true },
+    alignLeft: { horizontal: 'left', vertical: 'middle', wrapText: true },
+    // Indigo 配色（标题）
+    titleBg: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } },
+    titleFont: { bold: true, size: 14, color: { argb: 'FFFFFFFF' }, name: 'Microsoft YaHei' },
+    // 表头样式
+    headerBg: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } },
+    headerFont: { bold: true, size: 11, color: { argb: 'FF3730A3' }, name: 'Microsoft YaHei' },
+    // 数据行样式
+    dataFont: { size: 10, color: { argb: 'FF1F2937' }, name: 'Microsoft YaHei' },
+    zebraBg1: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } },
+    zebraBg2: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F3FF' } },
+    // 总计行样式
+    totalBg: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } },
+    totalFont: { bold: true, size: 11, color: { argb: 'FF3730A3' }, name: 'Microsoft YaHei' },
+    // 合并单元格背景（继承上层）
+    mergeBg: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } },
+  }
+}
+
+function applyCellStyle(cell, style) {
+  cell.border = style.border
+  cell.alignment = style.alignment
+}
+
+function applyTitleStyle(cell, cfg) {
+  cell.fill = cfg.titleBg
+  cell.font = cfg.titleFont
+  cell.border = cfg.thickBorder
+  cell.alignment = cfg.alignCenter
+}
+
+function applyHeaderStyle(cell, cfg) {
+  cell.fill = cfg.headerBg
+  cell.font = cfg.headerFont
+  cell.border = cfg.thinBorder
+  cell.alignment = cfg.alignCenter
+}
+
+function applyDataStyle(cell, isZebra, cfg) {
+  cell.fill = isZebra ? cfg.zebraBg2 : cfg.zebraBg1
+  cell.font = cfg.dataFont
+  cell.border = cfg.thinBorder
+  cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+}
+
+function applyTotalStyle(cell, cfg) {
+  cell.fill = cfg.totalBg
+  cell.font = cfg.totalFont
+  cell.border = cfg.thinBorder
+  cell.alignment = cfg.alignCenter
+}
+
+// ─── Sheet 1：库存日志 ───────────────────────────────────────────────────────
+async function createLogSheet(workbook, data, cfg) {
+  const sheet = workbook.addWorksheet('库存日志', {
+    views: [{ state: 'frozen', ySplit: 2 }],
+  })
+
+  // 设置 autoFilter（点击筛选）
+  sheet.autoFilter = {
+    from: { row: 2, column: 1 },
+    to: { row: 2, column: 10 },
+  }
+
+  // ── Row 1：空行（合并单元格区域外） ──
+  const emptyRow = sheet.addRow([''])
+  emptyRow.height = 6
+
+  // ── Row 2：表头 ──
+  const header = [
+    '操作时间', '商品名称', 'SKU', '大类',
+    '操作类型', '变动数量', '操作前', '操作后',
+    '运单号', '备注',
+  ]
+  const headerRow = sheet.addRow(header)
+  headerRow.height = 36
+  headerRow.eachCell({ includeEmpty: true }, (cell) => {
+    applyHeaderStyle(cell, cfg)
+  })
+
+  // ── 数据行：先反转（让最早的时间在上面） ──
+  const reversedData = [...data].reverse()
+
+  // 准备数据并按日期分组
+  const dateGroups = []
+  let currentDate = null
+  let currentGroup = []
+
+  reversedData.forEach(log => {
+    const dateStr = formatDateOnly(log.created_at)
+    if (dateStr !== currentDate) {
+      if (currentGroup.length > 0) {
+        dateGroups.push({ date: currentDate, logs: currentGroup })
+      }
+      currentDate = dateStr
+      currentGroup = [log]
+    } else {
+      currentGroup.push(log)
+    }
+  })
+  if (currentGroup.length > 0) {
+    dateGroups.push({ date: currentDate, logs: currentGroup })
+  }
+
+  // 写入数据行（带日期合并）
+  const startDataRow = 3
+  let rowIdx = startDataRow
+
+  dateGroups.forEach(group => {
+    const groupSize = group.logs.length
+    const firstRowOfGroup = rowIdx
+
+    group.logs.forEach((log, idx) => {
+      const rowVals = [
+        formatDateOnly(log.created_at),
+        log.product_name || '',
+        log.sku_code || '',
+        log.category_name || '',
+        typeLabel(log.type),
+        safeStock(log.quantity),
+        safeStock(log.stock_before),
+        safeStock(log.stock_after),
+        log.tracking_number != null && log.tracking_number !== '' ? String(log.tracking_number) : '',
+        log.note || '',
+      ]
+
+      const row = sheet.addRow(rowVals)
+      row.height = 24
+      const isZebra = (rowIdx - startDataRow) % 2 === 1
+
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        applyDataStyle(cell, isZebra, cfg)
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+      })
+
+      rowIdx++
+    })
+
+    // 合并日期列（如果当天有多条记录）
+    if (groupSize > 1) {
+      sheet.mergeCells(firstRowOfGroup, 1, firstRowOfGroup + groupSize - 1, 1)
+      const mergedCell = sheet.getCell(firstRowOfGroup, 1)
+      mergedCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+      applyDataStyle(mergedCell, false, cfg)
+    }
+  })
+
+  // ── 列宽设置 ──
+  const colWidths = [16, 24, 18, 12, 10, 10, 10, 10, 22, 36]
+  colWidths.forEach((w, i) => {
+    sheet.getColumn(i + 1).width = w
+  })
+}
+
+// ─── 工具函数：仅日期（无时分秒） ──────────────────────────────────────────
+function formatDateOnly(t) {
+  if (!t) return '-'
+  const d = new Date(t)
+  if (isNaN(d.getTime())) return String(t).slice(0, 10) || '-'
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// ─── Sheet N：大类库存明细 ────────────────────────────────────────────────────
+async function createCategorySheet(workbook, category, products, logData, cfg) {
+  // 筛选属于该大类的产品
+  const catProducts = products.filter(p => p.category_id === category.id)
+
+  // 准备字段顺序（使用 template_schema 前3个字段作为排序/合并依据）
+  // 如果没有 template_schema 或为空，使用默认字段
+  const rawSchema = category.template_schema || []
+  const schemaFields = rawSchema.length > 0 ? rawSchema.slice(0, 3) : ['规格', '型号', 'LOG']
+
+  // ── 准备数据：提取规格属性 ──
+  const rowsData = []
+  catProducts.forEach(product => {
+    // 尝试从产品中解析规格属性
+    let attrs = {}
+    if (product.attributes) {
+      try {
+        attrs = typeof product.attributes === 'string'
+          ? JSON.parse(product.attributes)
+          : product.attributes
+      } catch (e) {
+        attrs = {}
+      }
+    }
+
+    rowsData.push({
+      product,
+      attrs,
+      // 排序用的字段（前3个规格字段的值）
+      sortKeys: schemaFields.map(f => String(attrs[f] || '').trim()),
+    })
+  })
+
+  // ── 排序：按前3个规格字段稳定排序 ──
+  rowsData.sort((a, b) => {
+    for (let i = 0; i < schemaFields.length; i++) {
+      const keyA = a.sortKeys[i] || ''
+      const keyB = b.sortKeys[i] || ''
+      const cmp = keyA.localeCompare(keyB, 'zh-CN', { sensitivity: 'base' })
+      if (cmp !== 0) return cmp
+    }
+    // 最后按 SKU 排序
+    return String(a.product.sku_code || '').localeCompare(String(b.product.sku_code || ''), 'zh-CN')
+  })
+
+  // ── 构建表头 ──
+  const headerLabels = [...schemaFields, 'SKU', '商品名称', '库存数量', '单价（元）', '金额（元）']
+
+  // ── 获取 Sheet 名称（截断过长的大类名） ──
+  const sheetName = (category.name || '未命名').length > 25
+    ? (category.name || '未命名').slice(0, 22) + '...'
+    : (category.name || '未命名')
+
+  const sheet = workbook.addWorksheet(sheetName, {
+    views: [{ state: 'frozen', ySplit: 3 }],
+  })
+
+  // 计算列索引（1-based）
+  const skuColIdx = schemaFields.length + 1
+  const nameColIdx = schemaFields.length + 2
+  const qtyColIdx = schemaFields.length + 3
+  const priceColIdx = schemaFields.length + 4
+  const amountColIdx = schemaFields.length + 5
+  const totalColCount = amountColIdx // 总列数
+
+  // autoFilter（点击筛选）
+  sheet.autoFilter = {
+    from: { row: 3, column: 1 },
+    to: { row: 3, column: totalColCount },
+  }
+
+  // ── Row 1：标题行（合并整个表头区域） ──
+  const priceVal = category.price != null && category.price !== '' && !isNaN(Number(category.price))
+    ? '¥' + Number(category.price).toFixed(2)
+    : '未设置'
+  const titleText = `【${category.name}】库存明细  |  单价：${priceVal}`
+  const titleRow = sheet.addRow([titleText])
+  titleRow.height = 40
+  // 合并所有列
+  sheet.mergeCells(1, 1, 1, totalColCount)
+  applyTitleStyle(sheet.getCell(1, 1), cfg)
+
+  // ── Row 2：空行 ──
+  const emptyRow = sheet.addRow([''])
+  emptyRow.height = 6
+
+  // ── Row 3：表头 ──
+  const headerRow = sheet.addRow(headerLabels)
+  headerRow.height = 36
+  headerRow.eachCell({ includeEmpty: true }, (cell) => {
+    applyHeaderStyle(cell, cfg)
+  })
+
+  // ── 数据行 + 合并逻辑 ──
+  const startDataRow = 4
+  const dataRowCount = rowsData.length
+
+  if (dataRowCount > 0) {
+    const numFields = schemaFields.length // 需要合并的父级字段数量
+
+    rowsData.forEach((rowItem, idx) => {
+      const product = rowItem.product
+      const attrs = rowItem.attrs
+
+      // 计算单价：优先使用产品单价，否则使用大类单价
+      const prodPrice = product.cost_price != null && product.cost_price !== ''
+        ? Number(product.cost_price) : null
+      const catPrice = category.price != null && category.price !== ''
+        ? Number(category.price) : null
+      const unitPrice = prodPrice !== null && !isNaN(prodPrice) ? prodPrice
+        : (catPrice !== null && !isNaN(catPrice) ? catPrice : 0)
+
+      // 单价为0时显示0
+      const displayPrice = unitPrice > 0 ? unitPrice : 0
+      const stockQty = Number(product.current_stock) || 0
+
+      // 构建行数据：[...规格字段, SKU, 名称, 数量, 单价, 金额公式占位]
+      const rowVals = [
+        ...schemaFields.map(f => String(attrs[f] || '').trim()),
+        product.sku_code || '',
+        product.name || '',
+        stockQty,
+        displayPrice,
+        '' // 金额列占位（用于放公式）
+      ]
+
+      const rowNum = startDataRow + idx
+      const row = sheet.addRow(rowVals)
+      row.height = 22
+
+      const isZebra = idx % 2 === 1
+
+      // 应用样式
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        applyDataStyle(cell, isZebra, cfg)
+
+        // SKU 列居中
+        if (colNum === skuColIdx) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+        }
+        // 数量、单价、数值列右��齐
+        if (colNum >= nameColIdx) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+        }
+      })
+
+      // 设置金额列的公式（数量 * 单价）
+      const qtyCellRef = `${String.fromCharCode(64 + qtyColIdx)}${rowNum}`
+      const priceCellRef = `${String.fromCharCode(64 + priceColIdx)}${rowNum}`
+      const amountCell = sheet.getCell(rowNum, amountColIdx)
+      amountCell.value = { formula: `${qtyCellRef}*${priceCellRef}` }
+      amountCell.numFmt = '¥#,##0.00'
+      applyDataStyle(amountCell, isZebra, cfg)
+      amountCell.border = cfg.thinBorder
+      amountCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+    })
+
+    // ── 单元格合并逻辑 ──
+    for (let colIdx = 0; colIdx < numFields; colIdx++) {
+      let mergeStartRow = startDataRow
+      let mergeCount = 1
+      let prevValue = rowsData.length > 0 ? (rowsData[0].sortKeys[colIdx] || '') : ''
+
+      for (let rowIdx = 1; rowIdx < dataRowCount; rowIdx++) {
+        const currentValue = rowsData[rowIdx].sortKeys[colIdx] || ''
+        // 检查所有左侧字段是否相同
+        const allLeftSame = rowsData[rowIdx].sortKeys
+          .slice(0, colIdx + 1)
+          .every((val, i) => (val || '') === (rowsData[rowIdx - 1].sortKeys[i] || ''))
+
+        if (currentValue === prevValue && allLeftSame) {
+          mergeCount++
+        } else {
+          if (mergeCount > 1) {
+            sheet.mergeCells(mergeStartRow, colIdx + 1, mergeStartRow + mergeCount - 1, colIdx + 1)
+            const mergedCell = sheet.getCell(mergeStartRow, colIdx + 1)
+            mergedCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+          }
+          mergeStartRow = startDataRow + rowIdx
+          mergeCount = 1
+          prevValue = currentValue
+        }
+      }
+
+      // 处理最后一组合并
+      if (mergeCount > 1) {
+        sheet.mergeCells(mergeStartRow, colIdx + 1, mergeStartRow + mergeCount - 1, colIdx + 1)
+        const mergedCell = sheet.getCell(mergeStartRow, colIdx + 1)
+        mergedCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+      }
+    }
+
+    // ── 总计行 ──
+    const totalRowNum = startDataRow + dataRowCount
+    const totalRow = sheet.addRow(new Array(totalColCount).fill(''))
+    totalRow.height = 32
+
+    // 合并"合计"文字到前几列（SKU及之前的列）
+    sheet.mergeCells(totalRowNum, 1, totalRowNum, skuColIdx)
+    const labelCell = sheet.getCell(totalRowNum, 1)
+    labelCell.value = '【合计】'
+    applyTotalStyle(labelCell, cfg)
+
+    // 商品名称列留空
+    const nameCell = sheet.getCell(totalRowNum, nameColIdx)
+    applyTotalStyle(nameCell, cfg)
+
+    // 数量列：显示总计（如果SUM结果为0则显示"-"）
+    const qtyColLetter = String.fromCharCode(64 + qtyColIdx)
+    const qtyTotalCell = sheet.getCell(totalRowNum, qtyColIdx)
+    qtyTotalCell.value = {
+      formula: `SUM(${qtyColLetter}${startDataRow}:${qtyColLetter}${startDataRow + dataRowCount - 1})`,
+      result: 0,
+    }
+    applyTotalStyle(qtyTotalCell, cfg)
+
+    // 单价列：显示"-"（不累加单价）
+    const priceCell = sheet.getCell(totalRowNum, priceColIdx)
+    priceCell.value = '-'
+    applyTotalStyle(priceCell, cfg)
+
+    // 总金额公式
+    const amountColLetter = String.fromCharCode(64 + amountColIdx)
+    const totalAmountCell = sheet.getCell(totalRowNum, amountColIdx)
+    totalAmountCell.value = {
+      formula: `SUM(${amountColLetter}${startDataRow}:${amountColLetter}${startDataRow + dataRowCount - 1})`,
+      result: 0,
+    }
+    totalAmountCell.numFmt = '¥#,##0.00'
+    applyTotalStyle(totalAmountCell, cfg)
+  }
+
+  // ── 列宽设置 ──
+  const colWidths = [
+    ...schemaFields.map(() => 14),
+    18, // SKU
+    24, // 商品名称
+    12, // 数量
+    12, // 单价
+    14, // 金额
+  ]
+  colWidths.forEach((w, i) => {
+    sheet.getColumn(i + 1).width = w
+  })
+}
+
+// ─── 主导出函数 ──────────────────────────────────────────────────────────────
 async function confirmExport() {
   showExportModal.value = false
   exporting.value = true
+
   try {
-    const params = {}
-    if (filterType.value) params.type = filterType.value
-    if (filterKeyword.value.trim()) params.keyword = filterKeyword.value.trim()
-    // 不带 limit offset，获取全量筛选数据
+    // ── Step 1：获取全量数据 ──
+    // 1.1 获取日志数据（当前筛选条件）
+    const logParams = {}
+    if (filterType.value) logParams.type = filterType.value
+    if (filterKeyword.value.trim()) logParams.keyword = filterKeyword.value.trim()
+    const logsRes = await getLogs(logParams)
+    const logsData = logsRes.data.data || []
 
-    const res = await getLogs(params)
-    const data = res.data.data || []
-
-    if (data.length === 0) {
+    if (logsData.length === 0) {
       MyMessage.warning('当前筛选条件下无数据可导出')
+      exporting.value = false
       return
     }
 
-    // 表头
-    const header = [
-      '操作时间',
-      '商品名称',
-      'SKU',
-      '大类',
-      '操作类型',
-      '变动数量',
-      '操作前',
-      '操作后',
-      '运单号',
-      '备注',
-    ]
+    // 1.2 获取全部分类（用于获取大类顺序和模板）
+    // 按 sort_order 升序排列，然后反转，实现倒序展示（产品大类第一个的放最后）
+    const catsRes = await getCategories()
+    const categoriesData = (catsRes.data.data || []).sort((a, b) => {
+      // sort_order 相同时按 id 排序
+      const orderA = a.sort_order ?? a.id ?? 0
+      const orderB = b.sort_order ?? b.id ?? 0
+      return orderA - orderB
+    }).reverse() // 倒序排列
 
-    // 数据行（数量列用数字，便于 Excel 识别）
-    const rows = data.map(log => [
-      formatTime(log.created_at),
-      log.product_name || '',
-      log.sku_code || '',
-      log.category_name || '',
-      typeLabel(log.type),
-      safeStock(log.quantity),
-      safeStock(log.stock_before),
-      safeStock(log.stock_after),
-      log.tracking_number != null && log.tracking_number !== '' ? String(log.tracking_number) : '',
-      log.note || '',
-    ])
+    // 1.3 获取全部产品（用于获取实时库存和单价）
+    const prodsRes = await getProducts({})
+    const productsData = prodsRes.data.data || []
 
-    // exceljs 会真正写入样式；社区版 xlsx 的 .s 在 writeFile 时会被丢弃
-    const thin = { style: 'thin', color: { argb: 'FFB8BCC8' } }
-    const cellBorder = { top: thin, left: thin, bottom: thin, right: thin }
-
-    // 商品名称(B列) 和 SKU(C列) 不换行，行高按内容撑开
-    const alignWrap = { horizontal: 'center', vertical: 'middle', wrapText: true }
-    const alignNoWrap = { horizontal: 'center', vertical: 'middle', wrapText: false }
-
+    // ── Step 2：构建 Workbook ──
     const workbook = new ExcelJS.Workbook()
     workbook.creator = '档把库存系统'
-    const sheet = workbook.addWorksheet('库存日志', {
-      views: [{ state: 'frozen', ySplit: 1 }],
-    })
+    workbook.created = new Date()
 
-    // B 列 24、C 列 18（商品名称更宽），其余微调
-    const colWidths = [22, 24, 18, 12, 12, 11, 11, 11, 22, 36]
-    colWidths.forEach((w, i) => {
-      sheet.getColumn(i + 1).width = w
-    })
+    const cfg = getStyleConfig()
 
-    const headerRow = sheet.addRow(header)
-    headerRow.height = 36
-    headerRow.eachCell({ includeEmpty: true }, (cell) => {
-      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' }, name: 'Microsoft YaHei' }
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }
-      cell.alignment = alignNoWrap
-      cell.border = cellBorder
-    })
+    // 2.1 创建库存日志 Sheet
+    await createLogSheet(workbook, logsData, cfg)
 
-    rows.forEach((rowVals, idx) => {
-      const row = sheet.addRow(rowVals)
-      row.height = 24
-      const zebra = idx % 2 === 1
-      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
-        // B 列(2) 和 C 列(3) 不换行，其余换行
-        const useNoWrap = colNum === 2 || colNum === 3
-        cell.font = { size: 10, color: { argb: 'FF1F2937' }, name: 'Microsoft YaHei' }
-        cell.alignment = useNoWrap ? alignNoWrap : alignWrap
-        cell.border = cellBorder
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: zebra ? 'FFF5F3FF' : 'FFFFFFFF' },
-        }
-      })
-    })
+    // 2.2 按大类顺序创建库存明细 Sheet（只创建有产品的大类）
+    let categoryCount = 0
+    for (const cat of categoriesData) {
+      const catProducts = productsData.filter(p => p.category_id === cat.id)
+      if (catProducts.length === 0) continue // 跳过无产品的大类
 
-    const totalCount = data.length
-    const fileName = `库存日志_${filterType.value || '全类型'}_${totalCount}条_${formatDateForFile(new Date())}.xlsx`
+      await createCategorySheet(workbook, cat, productsData, logsData, cfg)
+      categoryCount++
+    }
+
+    // ── Step 3：生成文件并下载 ──
+    const dateStr = formatDateForFile(new Date())
+    const fileName = `商品日志-${logsData.length}条日志-${categoryCount}个大类产品-${dateStr}.xlsx`
+
     const buffer = await workbook.xlsx.writeBuffer()
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -330,7 +701,8 @@ async function confirmExport() {
     link.download = fileName
     link.click()
     URL.revokeObjectURL(url)
-    MyMessage.success(`导出成功，共 ${data.length} 条记录`)
+
+    MyMessage.success(`导出成功！共 ${logsData.length} 条日志，${categoryCount} 个大类`)
   } catch (e) {
     MyMessage.error('导出失败：' + (e.message || '未知错误'))
   } finally {
@@ -397,7 +769,7 @@ onMounted(loadLogs)
     <!-- 页面标题 -->
     <div class="sticky top-0 z-20 px-4 lg:px-6 py-4 lg:py-5
                  bg-slate-50/80 dark:bg-slate-950/80
-                 backdrop-blur-xl border-b border-slate-200/60 dark:border-white/5">
+                 backdrop-blur-xl border-b border-slate-200/60 dark:border-white/5 pb-safe">
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 class="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">库存日志</h1>
@@ -536,7 +908,7 @@ onMounted(loadLogs)
           </svg>
         </div>
         <p class="text-sm text-rose-600 dark:text-rose-300 flex-1">{{ error }}</p>
-        <button @click="error = ''; loadLogs()" class="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-400 cursor-pointer">重试</button>
+        <button @click="error = ''; loadLogs()" class="text-xs px-3 py-1.5 rounded-lg bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-500/30 cursor-pointer">重试</button>
       </div>
 
       <!-- 加载中 -->

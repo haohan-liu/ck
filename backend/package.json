@@ -6,8 +6,10 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "bing-translate-api": "^4.2.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "pinyin-pro": "^3.28.1",
     "sql.js": "^1.11.0"
   }
 }

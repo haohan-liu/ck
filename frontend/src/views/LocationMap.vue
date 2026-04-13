@@ -136,7 +136,6 @@ async function loadShelfConfig() {
       await persistShelfConfig()
     }
   } catch (error) {
-    console.error('[货架配置] 加载失败:', error)
     shelves.value = JSON.parse(JSON.stringify(DEFAULT_SHELVES))
   } finally {
     isLoadingShelves.value = false
@@ -152,8 +151,9 @@ function debouncedSave() {
 async function persistShelfConfig() {
   try {
     await saveShelfConfig(shelves.value)
+    MyMessage.success('货架配置已保存')
   } catch (error) {
-    console.error('[货架配置] 保存失败:', error)
+    MyMessage.error('保存货架配置失败')
   }
 }
 
@@ -195,7 +195,7 @@ async function loadData() {
     })
     locationData.value = data
   } catch (error) {
-    console.error('加载数据失败:', error)
+    MyMessage.error('加载数据失败，请检查网络连接')
   } finally {
     loadingStock.value = false
     lastUpdateTime.value = formatNow()
@@ -536,10 +536,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="h-full overflow-auto" @click="hideTooltip">
+  <div class="h-full flex flex-col overflow-hidden" @click="hideTooltip">
 
     <!-- ════ 顶部工具栏 ════ -->
-    <div class="sticky top-0 z-10 px-4 lg:px-6 py-4 lg:py-5
+    <div class="flex-shrink-0 px-4 lg:px-6 py-4 lg:py-5 pb-safe
                 backdrop-blur-xl border-b"
          style="background: rgba(var(--bg-glass), 0.8); border-color: var(--border-default);">
       
@@ -672,8 +672,8 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ════ 内容区 ════ -->
-    <div class="px-4 lg:px-6 py-5 lg:py-6 space-y-6">
+    <!-- ════ 内容区 - 独立滚动 ════ -->
+    <div class="flex-1 overflow-auto px-4 lg:px-6 py-5 lg:py-6 space-y-6">
 
       <!-- 加载状态 -->
       <div v-if="pageLoading" class="flex justify-center items-center py-20">

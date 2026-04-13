@@ -1,8 +1,7 @@
 <script setup>
-import { ref, computed, watch, inject } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { stockIn, stockOut, stockAdjust } from '../api/inventory.js'
-
-const isDark = inject('isDark', ref(true))
+import MyMessage from './ui/MyMessage.js'
 
 const props = defineProps({
   visible: Boolean,

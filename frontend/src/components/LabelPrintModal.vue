@@ -18,7 +18,7 @@ async function generateQRCode() {
       errorCorrectionLevel: 'M'
     })
   } catch (err) {
-    console.error('二维码生成失败:', err)
+    MyMessage.error('二维码生成失败')
     qrCodeDataUrl.value = ''
   }
 }

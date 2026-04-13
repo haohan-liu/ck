@@ -34,6 +34,7 @@ function createTables() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       template_schema TEXT NOT NULL DEFAULT '[]',
+      price REAL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -132,7 +133,9 @@ function createTables() {
   migrateProductSnapshot();
   migrateTrackingNumber();
   migrateProductSortOrder();
+  migrateCategorySortOrder();
   migrateCategoriesCreatedAt();
+  migrateCategoryPrice();
 
   console.log('[DB] 表结构创建 / 迁移完成');
 }
@@ -163,27 +166,19 @@ function migrateInventoryLogs() {
  */
 function migrateLogTypeConstraint() {
   try {
-    // 检查当前表定义中的约束
     const tableInfo = db.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='inventory_logs'");
 
     if (tableInfo.length === 0 || tableInfo[0].values.length === 0) {
-      console.log('[DB] 未找到 inventory_logs 表定义，跳过约束检查');
       return;
     }
 
     const createSql = tableInfo[0].values[0][0];
-    console.log('[DB] 当前 inventory_logs 表约束定义:', createSql);
 
-    // 检查约束是否已包含 'add'
     if (createSql.includes("'add'")) {
-      console.log('[DB] CHECK 约束已支持 add 类型，无需重建');
       return;
     }
 
-    // 约束不包含 'add'，需要重建表
-    console.log('[DB] 检测到旧的 CHECK 约束（不包含 add），开始重建表...');
     recreateInventoryLogsTable();
-
   } catch (e) {
     console.warn('[DB] 约束迁移检查失败:', e.message);
   }
@@ -307,6 +302,19 @@ function migrateProductSortOrder() {
 }
 
 /**
+ * 为 categories 表补充 sort_order 排序字段
+ * 用于支持产品大类列表的自定义拖拽排序
+ */
+function migrateCategorySortOrder() {
+  const existingColumns = getExistingColumns('categories');
+
+  if (!existingColumns.includes('sort_order')) {
+    db.run('ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0');
+    console.log('[DB] 迁移：已添加 sort_order 列到 categories 表');
+  }
+}
+
+/**
  * 修复 categories 表的 created_at 时间问题
  * 旧数据使用 SQLite CURRENT_TIMESTAMP (UTC)，需要更新为本地时间
  */
@@ -355,6 +363,19 @@ function migrateCategoriesCreatedAt() {
     }
   } catch (e) {
     console.warn('[DB] categories created_at 迁移失败:', e.message);
+  }
+}
+
+/**
+ * 为 categories 表补充 price 单价字段
+ * 用于支持"大类决定单价"的业务逻辑
+ */
+function migrateCategoryPrice() {
+  const existingColumns = getExistingColumns('categories');
+
+  if (!existingColumns.includes('price')) {
+    db.run('ALTER TABLE categories ADD COLUMN price REAL DEFAULT 0');
+    console.log('[DB] 迁移：已添加 price 列到 categories 表');
   }
 }
 

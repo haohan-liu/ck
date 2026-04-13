@@ -1,10 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getCategories, createCategory, updateCategory, deleteCategory } from '../api/categories.js'
+import draggable from 'vuedraggable'
+import { getCategories, createCategory, updateCategory, deleteCategory, updateCategoryOrder } from '../api/categories.js'
+import MyMessage from '../components/ui/MyMessage.js'
 
 const categories = ref([])
 const loading = ref(false)
-const error = ref('')
 const showModal = ref(false)
 const modalMode = ref('add')
 const deleteId = ref(null)
@@ -12,7 +13,10 @@ const deleteName = ref('')
 const confirmDelete = ref(false)
 const MAX_FIELDS = 8
 
-const form = ref({ id: null, name: '', template_schema: [''] })
+const form = ref({ id: null, name: '', template_schema: [''], price: '' })
+
+// 拖拽排序 - 保存原始顺序用于比较
+let originalOrder = []
 
 // 时间格式化函数 - 使用本地时间
 function formatTime(t) {
@@ -25,7 +29,7 @@ function formatTime(t) {
 
 function openAddModal() {
   modalMode.value = 'add'
-  form.value = { id: null, name: '', template_schema: [''] }
+  form.value = { id: null, name: '', template_schema: [''], price: '' }
   showModal.value = true
 }
 
@@ -35,28 +39,28 @@ function openEditModal(cat) {
     id: cat.id,
     name: cat.name,
     template_schema: cat.template_schema && cat.template_schema.length > 0 ? [...cat.template_schema] : [''],
+    price: cat.price || '',
   }
   showModal.value = true
 }
 
 function addField() {
-  if (form.value.template_schema.length >= MAX_FIELDS) { error.value = `规格模板字段最多只能添加 ${MAX_FIELDS} 个`; return }
-  error.value = ''
+  if (form.value.template_schema.length >= MAX_FIELDS) { MyMessage.warning(`规格模板字段最多只能添加 ${MAX_FIELDS} 个`); return }
   form.value.template_schema.push('')
 }
 
 function removeField(index) {
-  if (form.value.template_schema.length <= 1) { error.value = '至少需要保留一个规格字段'; return }
-  error.value = ''
+  if (form.value.template_schema.length <= 1) { MyMessage.warning('至少需要保留一个规格字段'); return }
   form.value.template_schema.splice(index, 1)
 }
 
 function validateForm() {
-  error.value = ''
-  if (!form.value.name || !form.value.name.trim()) { error.value = '大类名称不能为空'; return false }
+  if (!form.value.name || !form.value.name.trim()) { MyMessage.warning('大类名称不能为空'); return false }
   const fields = form.value.template_schema.filter(f => (f && f.trim()))
-  if (fields.length === 0) { error.value = '至少需要保留一个非空规格字段'; return false }
-  if (fields.length !== form.value.template_schema.length) { error.value = '存在空白的规格字段，请填写或删除后再保存'; return false }
+  if (fields.length === 0) { MyMessage.warning('至少需要保留一个非空规格字段'); return false }
+  if (fields.length !== form.value.template_schema.length) { MyMessage.warning('存在空白的规格字段，请填写或删除后再保存'); return false }
+  if (form.value.price === '' || form.value.price === null || isNaN(Number(form.value.price))) { MyMessage.warning('大类单价不能为空且必须为有效数字'); return false }
+  if (Number(form.value.price) < 0) { MyMessage.warning('大类单价不能为负数'); return false }
   return true
 }
 
@@ -65,26 +69,31 @@ async function submitForm() {
   const payload = {
     name: form.value.name.trim(),
     template_schema: form.value.template_schema.filter(f => f.trim()),
+    price: Number(form.value.price) || 0,
   }
   try {
-    if (modalMode.value === 'add') await createCategory(payload)
-    else await updateCategory(form.value.id, payload)
+    if (modalMode.value === 'add') {
+      await createCategory(payload)
+      MyMessage.success('新增大类成功')
+    } else {
+      await updateCategory(form.value.id, payload)
+      MyMessage.success('修改大类成功')
+    }
     showModal.value = false
     await loadCategories()
   } catch (e) {
-    error.value = e.response?.data?.error || '保存失败，请重试'
+    MyMessage.error(e.response?.data?.error || '保存失败，请重试')
   }
 }
 
 async function loadCategories() {
   loading.value = true
-  error.value = ''
   try {
     const res = await getCategories()
     categories.value = res.data.data || []
+    originalOrder = categories.value.map(c => c.id)
   } catch (e) {
-    error.value = '加载大类列表失败'
-    console.error(e)
+    MyMessage.error(e.response?.data?.error || '加载大类列表失败')
   } finally {
     loading.value = false
   }
@@ -102,21 +111,45 @@ async function confirmDeleteCategory() {
     confirmDelete.value = false
     deleteId.value = null
     deleteName.value = ''
+    MyMessage.success('删除大类成功')
     await loadCategories()
   } catch (e) {
     confirmDelete.value = false
-    error.value = e.response?.data?.error || '删除失败'
+    MyMessage.error(e.response?.data?.error || '删除失败')
   }
 }
 
 onMounted(loadCategories)
+
+// 拖拽排序结束后的回调
+async function onDragEnd(evt) {
+  const currentOrder = categories.value.map(p => p.id)
+  const hasChanged = !currentOrder.every((id, index) => id === originalOrder[index])
+
+  if (!hasChanged) return
+
+  originalOrder = currentOrder
+
+  const items = categories.value.map((p, index) => ({
+    id: p.id,
+    sort_order: index + 1
+  }))
+
+  try {
+    await updateCategoryOrder(items)
+    MyMessage.success('排序已更新')
+  } catch (e) {
+    MyMessage.error('保存排序失败: ' + (e.response?.data?.error || e.message))
+    await loadCategories()
+  }
+}
 </script>
 
 <template>
   <div class="h-full overflow-hidden flex flex-col">
 
-    <!-- ════ 标题栏 ════ -->
-    <div class="flex-shrink-0 px-4 lg:px-6 py-4 lg:py-5 border-b border-slate-200/60 dark:border-white/5 bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl">
+    <!-- ════ 页面标题栏 ════ -->
+    <div class="flex-shrink-0 px-4 lg:px-6 py-4 lg:py-5 border-b border-slate-200/60 dark:border-white/5 bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl pb-safe">
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 class="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">产品大类</h1>
@@ -124,7 +157,7 @@ onMounted(loadCategories)
         </div>
         <button
           @click="openAddModal"
-          class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white
+          class="flex items-center gap-2 px-4 lg:px-5 py-2.5 rounded-xl text-sm font-semibold text-white
                  bg-gradient-to-r from-indigo-500 to-indigo-600
                  shadow-md shadow-indigo-500/20
                  hover:from-indigo-600 hover:to-indigo-700
@@ -133,24 +166,13 @@ onMounted(loadCategories)
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 5v14"/><path d="M5 12h14"/>
           </svg>
-          新增大类
+          <span class="hidden sm:inline">新增大类</span>
         </button>
       </div>
     </div>
 
     <!-- ════ 列表内容 ════ -->
     <div class="flex-1 overflow-auto">
-
-      <!-- 错误提示 -->
-      <div v-if="error && !showModal && !confirmDelete" class="mx-4 lg:mx-6 mt-4 p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
-          </svg>
-        </div>
-        <p class="text-sm text-rose-600 dark:text-rose-300 flex-1">{{ error }}</p>
-        <button @click="error = ''" class="text-lg text-rose-400 hover:text-rose-500 cursor-pointer leading-none">&times;</button>
-      </div>
 
       <!-- 加载中 -->
       <div v-if="loading" class="flex justify-center py-20">
@@ -177,86 +199,141 @@ onMounted(loadCategories)
           <table class="w-full text-sm">
             <thead>
               <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
+                <th class="w-12 px-3 py-3.5"></th>
                 <th class="px-6 py-3.5 text-left font-medium">大类名称</th>
                 <th class="px-6 py-3.5 text-left font-medium">规格模板字段</th>
+                <th class="px-6 py-3.5 text-center font-medium">单价</th>
                 <th class="px-6 py-3.5 text-center font-medium">创建时间</th>
                 <th class="px-6 py-3.5 text-right font-medium pr-5">操作</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-50 dark:divide-white/5">
-              <tr v-for="cat in categories" :key="cat.id" class="hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors">
-                <td class="px-6 py-4">
-                  <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
-                        <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
-                        <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+            <draggable
+              v-model="categories"
+              item-key="id"
+              tag="tbody"
+              handle=".drag-handle"
+              :animation="150"
+              ghost-class="drag-ghost"
+              chosen-class="is-drag-chosen"
+              drag-class="is-drag-dragging"
+              @end="onDragEnd"
+            >
+              <template #item="{ element: cat }">
+                <tr class="group hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors">
+                  <td class="px-3 py-3.5">
+                    <div class="drag-handle cursor-grab active:cursor-grabbing p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors" title="拖动排序">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                        <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
                       </svg>
                     </div>
-                    <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ cat.name }}</span>
-                  </div>
-                </td>
-                <td class="px-6 py-4">
-                  <div class="flex flex-wrap gap-1.5">
-                    <span
-                      v-for="(field, fi) in (cat.template_schema || [])"
-                      :key="fi"
-                      class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5"
-                    >
-                      {{ field }}
-                    </span>
-                    <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
-                  </div>
-                </td>
-                <td class="px-6 py-4 text-center text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap font-mono">
-                  {{ cat.created_at ? formatTime(cat.created_at) : '-' }}
-                </td>
-                <td class="px-6 py-4 pr-5">
-                  <div class="flex items-center justify-end gap-2">
-                    <button @click="openEditModal(cat)" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
-                      编辑
-                    </button>
-                    <button @click="openDeleteDialog(cat)" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all cursor-pointer">
-                      删除
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                          <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                          <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+                        </svg>
+                      </div>
+                      <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ cat.name }}</span>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="flex flex-wrap gap-1.5">
+                      <span
+                        v-for="(field, fi) in (cat.template_schema || [])"
+                        :key="fi"
+                        class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5"
+                      >
+                        {{ field }}
+                      </span>
+                      <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 text-center text-sm font-medium text-slate-700 dark:text-slate-300">
+                    ¥{{ Number(cat.price || 0).toFixed(2) }}
+                  </td>
+                  <td class="px-6 py-4 text-center text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap font-mono">
+                    {{ cat.created_at ? formatTime(cat.created_at) : '-' }}
+                  </td>
+                  <td class="px-6 py-4 pr-5">
+                    <div class="flex items-center justify-end gap-2">
+                      <button @click="openEditModal(cat)" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
+                        编辑
+                      </button>
+                      <button @click="openDeleteDialog(cat)" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all cursor-pointer">
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </draggable>
           </table>
         </div>
       </div>
 
       <!-- 平板/手机 卡片列表 (< lg) -->
       <div v-if="!loading && categories.length > 0" class="lg:hidden p-4 space-y-3">
-        <div
-          v-for="cat in categories"
-          :key="cat.id"
-          class="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden p-4"
+        <draggable
+          v-model="categories"
+          item-key="id"
+          handle=".drag-handle"
+          :animation="250"
+          ghost-class="drag-ghost"
+          chosen-class="drag-chosen"
+          drag-class="drag-dragging"
+          @end="onDragEnd"
+          class="space-y-3"
         >
-          <div class="flex items-start justify-between gap-3 mb-3">
-            <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
-                  <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
-                  <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
-                </svg>
+          <template #item="{ element: cat }">
+            <div
+              class="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden p-4"
+            >
+              <div class="flex items-center justify-between">
+                <div class="drag-handle cursor-grab active:cursor-grabbing p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors shrink-0" title="拖动排序">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                    <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+                  </svg>
+                </div>
+                <div class="flex items-center gap-3 flex-1 min-w-0 mx-2">
+                  <div class="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+                      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/>
+                      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
+                    </svg>
+                  </div>
+                  <span class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ cat.name }}</span>
+                </div>
+                <div class="flex gap-1 shrink-0">
+                  <button @click="openEditModal(cat)" class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-500 active:scale-95 transition-all cursor-pointer" title="编辑">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                    </svg>
+                  </button>
+                  <button @click="openDeleteDialog(cat)" class="w-8 h-8 flex items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-500/20 active:scale-95 transition-all cursor-pointer" title="删除">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <span class="text-sm font-semibold text-slate-900 dark:text-white">{{ cat.name }}</span>
+              <div class="flex flex-wrap gap-1.5 mt-2">
+                <span v-for="(field, fi) in (cat.template_schema || [])" :key="fi" class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">{{ field }}</span>
+                <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
+              </div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-2 font-mono">创建于 {{ cat.created_at ? formatTime(cat.created_at).slice(0, 16) : '-' }}</p>
+              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
+                <span class="text-slate-400 dark:text-slate-500">单价：</span>
+                <span class="text-indigo-500 font-semibold">¥{{ Number(cat.price || 0).toFixed(2) }}</span>
+              </p>
             </div>
-            <div class="flex gap-2 shrink-0">
-              <button @click="openEditModal(cat)" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 active:scale-95 transition-all cursor-pointer">编辑</button>
-              <button @click="openDeleteDialog(cat)" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 active:scale-95 transition-all cursor-pointer">删除</button>
-            </div>
-          </div>
-          <div class="flex flex-wrap gap-1.5">
-            <span v-for="(field, fi) in (cat.template_schema || [])" :key="fi" class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">{{ field }}</span>
-            <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
-          </div>
-          <p class="text-xs text-slate-400 dark:text-slate-500 mt-2 font-mono">创建于 {{ cat.created_at ? formatTime(cat.created_at).slice(0, 16) : '-' }}</p>
-        </div>
+          </template>
+        </draggable>
       </div>
     </div>
 
@@ -353,12 +430,26 @@ onMounted(loadCategories)
               </button>
             </div>
 
-            <!-- 错误提示 -->
-            <div v-if="error" class="flex items-start gap-2.5 p-3.5 rounded-xl text-sm bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-300">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-rose-500 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
-              </svg>
-              {{ error }}
+            <!-- 大类单价 -->
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                大类单价 <span class="text-rose-500">*</span>
+              </label>
+              <div class="relative">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400 dark:text-slate-500">￥</span>
+                <input
+                  v-model="form.price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  class="w-full py-3 px-4 pl-8 rounded-xl text-sm text-slate-900 dark:text-white
+                         bg-slate-50 dark:bg-slate-800 border-2 border-transparent
+                         focus:border-indigo-500 focus:ring-0 focus:outline-none
+                         placeholder-slate-400 transition-all"
+                />
+              </div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-1.5">设置该大类下所有商品的默认单价</p>
             </div>
           </div>
 
@@ -408,4 +499,51 @@ onMounted(loadCategories)
 .modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 .scale-in { animation: scale-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 @keyframes scale-in { 0% { opacity: 0; transform: scale(0.94); } 100% { opacity: 1; transform: scale(1); } }
+
+/* ============================================= */
+/* 拖拽样式 - 与 ProductManage 保持一致          */
+/* ============================================= */
+
+.drag-ghost {
+  opacity: 1 !important;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.02)) !important;
+  border: 2px dashed rgba(99, 102, 241, 0.3) !important;
+}
+
+.drag-ghost td {
+  visibility: hidden !important;
+}
+
+.is-drag-chosen {
+  cursor: grabbing !important;
+}
+
+.is-drag-dragging {
+  background: rgba(99, 102, 241, 0.15) !important;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.25) !important;
+  transform: scale(1.01) !important;
+}
+
+.drag-handle:hover {
+  background: rgba(99, 102, 241, 0.1) !important;
+  border-radius: 6px;
+}
+
+/* 移动端卡片拖拽样式 */
+.drag-ghost.drag-card {
+  opacity: 1 !important;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0.02)) !important;
+  border: 2px dashed rgba(99, 102, 241, 0.3) !important;
+  transform: none !important;
+}
+
+.drag-chosen {
+  cursor: grabbing !important;
+}
+
+.drag-dragging {
+  background: rgba(99, 102, 241, 0.15) !important;
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3) !important;
+  transform: scale(1.02) !important;
+}
 </style>

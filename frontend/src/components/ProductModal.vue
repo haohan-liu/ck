@@ -1,13 +1,15 @@
 <script setup>
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, watch, computed, nextTick, reactive } from 'vue'
 import { getCategories } from '../api/categories.js'
+import { getSkuPreview } from '../api/products.js'
 import MySelect from './ui/MySelect.vue'
+import MyMessage from './ui/MyMessage.js'
 
 const props = defineProps({ visible: Boolean, product: Object })
-const emit = defineEmits(['close', 'success'])
+const emit = defineEmits(['close', 'success', 'unlock'])
 
 const categories = ref([])
-const categoryLoading = ref(false)
+const loading = ref(false)  // 弹窗加载状态
 const mode = computed(() => props.product ? 'edit' : 'add')
 
 const form = ref({
@@ -19,11 +21,41 @@ const form = ref({
   unit: '件',
   cost_price: 0,
 })
-const attrs = ref({})
-const originalProduct = ref(null)
+const _attrs = ref({})  // 存储原始 attributes 数据
 const formError = ref('')
-const submitting = ref(false)
-const dataLoaded = ref(false)
+
+// 规格属性 - 使用 computed 确保响应式追踪
+const attrsArray = computed({
+  get() {
+    const schema = currentSchema.value
+    return schema.map(field => ({
+      field,
+      value: _attrs.value[field] || ''
+    }))
+  },
+  set(newArray) {
+    newArray.forEach(item => {
+      _attrs.value[item.field] = item.value
+    })
+  }
+})
+
+// 获取单个属性值
+function getAttr(field) {
+  const val = _attrs.value[field] || ''
+  console.log('[ProductModal] getAttr:', field, '=', val, '_attrs:', JSON.stringify(_attrs.value))
+  return val
+}
+
+// 设置单个属性值
+function setAttr(field, value) {
+  _attrs.value[field] = value
+  console.log('[ProductModal] setAttr:', field, '=', value)
+}
+
+// SKU 预览
+const skuPreview = ref('')
+const skuPreviewLoading = ref(false)
 
 const UNITS = ['件', '个', '套', '对', '箱', '盒']
 
@@ -37,67 +69,181 @@ const unitOptions = computed(() =>
 
 const currentSchema = computed(() => {
   if (!form.value.category_id) return []
-  const cat = categories.value.find(c => c.id === form.value.category_id)
+  const catId = Number(form.value.category_id)
+  const cat = categories.value.find(c => c.id === catId)
   if (!cat) return []
   return Array.isArray(cat.template_schema) ? cat.template_schema : []
 })
 
 const currentCategoryName = computed(() => {
-  const cat = categories.value.find(c => c.id === form.value.category_id)
+  const catId = Number(form.value.category_id)
+  const cat = categories.value.find(c => c.id === catId)
   return cat ? cat.name : ''
+})
+
+const currentTemplateSchema = computed(() => {
+  if (!form.value.category_id) return []
+  const catId = Number(form.value.category_id)
+  const cat = categories.value.find(c => c.id === catId)
+  if (!cat) return []
+  return Array.isArray(cat.template_schema) ? cat.template_schema : []
 })
 
 const autoName = computed(() => {
   if (!currentCategoryName.value) return ''
   const parts = [currentCategoryName.value]
   for (const field of currentSchema.value) {
-    const val = attrs.value[field]
+    const val = _attrs.value[field]
     if (val && String(val).trim()) parts.push(String(val).trim())
   }
   return parts.join('-')
 })
 
-watch(() => form.value.category_id, () => {
-  attrs.value = {}
-  formError.value = ''
+
+// 生成 SKU 预览（调用后端实时翻译）
+async function updateSkuPreview() {
+  // 新增模式下才需要自动生成SKU，编辑模式保持原SKU不变
+  if (!form.value.category_id || mode.value === 'edit') {
+    return;
+  }
+
+  const catId = Number(form.value.category_id);
+  const cat = categories.value.find(c => c.id === catId);
+  if (!cat) {
+    skuPreview.value = '';
+    return;
+  }
+
+  const schema = Array.isArray(cat.template_schema) ? cat.template_schema : [];
+  if (schema.length === 0) {
+    skuPreview.value = '';
+    return;
+  }
+
+  // 检查是否所有规格都已填写
+  const filledSpecs = schema.filter(field => _attrs.value[field] && String(_attrs.value[field]).trim());
+  if (filledSpecs.length === 0) {
+    skuPreview.value = '';
+    return;
+  }
+
+  skuPreviewLoading.value = true;
+  try {
+    // 调用后端 API 进行实时翻译
+    const res = await getSkuPreview(catId, _attrs.value);
+    if (res.data.success) {
+      skuPreview.value = res.data.data.sku_code;
+    }
+  } catch (e) {
+    console.error('生成SKU预览失败:', e);
+    skuPreview.value = '';
+  } finally {
+    skuPreviewLoading.value = false;
+  }
+}
+
+// 监听规格字段变化
+watch(_attrs, () => {
+  updateSkuPreview();
+}, { deep: true })
+
+// 标志位：是否正在初始化编辑数据
+let isInitializing = false
+
+watch(() => form.value.category_id, (newCatId) => {
+  // 初始化时不执行清空
+  if (isInitializing) {
+    console.log('[ProductModal] category_id watch: isInitializing=true, skip clearing')
+    return
+  }
+  
+  // 清空 attrs 的所有属性
+  Object.keys(_attrs.value).forEach(key => delete _attrs.value[key])
+  formError.value = '';
+  skuPreview.value = '';
+  // 从选中大类读取单价并自动填充
+  if (newCatId) {
+    const catId = Number(newCatId)
+    const cat = categories.value.find(c => c.id === catId)
+    if (cat && cat.price !== undefined) {
+      form.value.cost_price = Number(cat.price) || 0
+    }
+  }
 })
 
 // 监听 visible 和 product 的组合变化
 watch([() => props.visible, () => props.product], async ([visible, product]) => {
+  console.log('[ProductModal] watch triggered', { visible, product })
   if (!visible) {
-    dataLoaded.value = false
+    loading.value = false
     return
   }
-  
-  // 加载分类
-  await loadCategories()
-  
-  // 填充表单数据
-  if (product) {
-    originalProduct.value = product
-    // 使用 JSON.parse(JSON.stringify) 确保是深拷贝
-    const productData = JSON.parse(JSON.stringify(product))
-    form.value = {
-      category_id: productData.category_id || '',
-      remark: productData.remark || '',
-      location_code: productData.location_code || '',
-      current_stock: productData.current_stock || 0,
-      min_stock: productData.min_stock || 0,
-      unit: productData.unit || '件',
-      cost_price: productData.cost_price || 0,
+
+  loading.value = true
+  console.log('[ProductModal] loading started')
+
+  try {
+    // 先加载分类（如果没有的话）
+    if (categories.value.length === 0) {
+      console.log('[ProductModal] loading categories...')
+      try {
+        await loadCategories()
+        console.log('[ProductModal] categories loaded:', categories.value.length, 'ids:', categories.value.map(c => c.id))
+      } catch (catError) {
+        console.error('[ProductModal] loadCategories error:', catError)
+        loading.value = false
+        MyMessage.error('加载分类失败')
+        return
+      }
     }
-    attrs.value = productData.attributes || {}
-  } else {
-    originalProduct.value = null
-    form.value = { category_id: '', remark: '', location_code: '', current_stock: 0, min_stock: 0, unit: '件', cost_price: 0 }
-    attrs.value = {}
+
+    if (product) {
+      console.log('[ProductModal] setting form for edit:', product)
+      isInitializing = true
+      form.value = {
+        category_id: product.category_id || '',
+        remark: product.remark || '',
+        location_code: product.location_code || '',
+        current_stock: product.current_stock || 0,
+        min_stock: product.min_stock || 0,
+        unit: product.unit || '件',
+        cost_price: product.cost_price || 0,
+      }
+      Object.keys(_attrs.value).forEach(key => delete _attrs.value[key])
+      Object.assign(_attrs.value, product.attributes || {})
+      skuPreview.value = product.sku_code || ''
+      console.log('[ProductModal] form.category_id set to:', form.value.category_id, '_attrs:', JSON.stringify(_attrs.value))
+    } else {
+      isInitializing = true
+      form.value = { category_id: '', remark: '', location_code: '', current_stock: 0, min_stock: 0, unit: '件', cost_price: 0 }
+      Object.keys(_attrs.value).forEach(key => delete _attrs.value[key])
+      skuPreview.value = ''
+    }
+    formError.value = ''
+    
+    // 调试：检查 currentSchema
+    console.log('[ProductModal] DEBUG: before nextTick - form.category_id:', form.value.category_id, 'type:', typeof form.value.category_id, 'currentSchema:', currentSchema.value)
+    console.log('[ProductModal] DEBUG: categories:', categories.value.filter(c => c.id === 7))
+    
+    await nextTick()
+    
+    // 在 nextTick 之后再解锁，防止异步 watcher
+    isInitializing = false
+    console.log('[ProductModal] DEBUG: isInitializing set to false')
+    
+    // 再次检查
+    console.log('[ProductModal] DEBUG: after nextTick - form.category_id:', form.value.category_id, 'currentSchema:', currentSchema.value)
+    
+    loading.value = false
+    console.log('[ProductModal] done - form.category_id:', form.value.category_id, 'currentSchema:', currentSchema.value, 'categoryOptions:', categoryOptions.value.map(o => o.value))
+  } catch (error) {
+    console.error('[ProductModal] load error:', error)
+    loading.value = false
+    MyMessage.error('加载商品数据失败')
   }
-  formError.value = ''
-  dataLoaded.value = true
 }, { immediate: true })
 
 async function loadCategories() {
-  categoryLoading.value = true
   try {
     const res = await getCategories()
     categories.value = res.data.data.map(cat => ({
@@ -107,8 +253,9 @@ async function loadCategories() {
         try { return JSON.parse(cat.template_schema) } catch { return [] }
       })()
     }))
-  } catch (e) { console.error(e) }
-  finally { categoryLoading.value = false }
+  } catch (e) {
+    MyMessage.error('加载分类失败')
+  }
 }
 
 function validateForm() {
@@ -118,26 +265,21 @@ function validateForm() {
   return true
 }
 
-async function submit() {
+function submit() {
   formError.value = ''
   if (!validateForm()) return
-  submitting.value = true
-  try {
-    const payload = {
-      category_id: form.value.category_id,
-      name: autoName.value,
-      attributes: { ...attrs.value },
-      remark: form.value.remark,
-      location_code: form.value.location_code,
-      current_stock: Number(form.value.current_stock) || 0,
-      min_stock: Number(form.value.min_stock) || 0,
-      unit: form.value.unit,
-      cost_price: Number(form.value.cost_price) || 0,
-    }
-    emit('success', payload)
-  } finally {
-    submitting.value = false
+  const payload = {
+    category_id: form.value.category_id,
+    name: autoName.value,
+    attributes: { ..._attrs.value },
+    remark: form.value.remark,
+    location_code: form.value.location_code,
+    current_stock: Number(form.value.current_stock) || 0,
+    min_stock: Number(form.value.min_stock) || 0,
+    unit: form.value.unit,
+    cost_price: Number(form.value.cost_price) || 0,
   }
+  emit('success', payload)
 }
 </script>
 
@@ -153,6 +295,16 @@ async function submit() {
                border border-slate-100 dark:border-white/10
                shadow-2xl shadow-black/20"
       >
+        <!-- 加载遮罩 -->
+        <div v-show="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm">
+          <div class="flex flex-col items-center gap-3">
+            <svg class="w-8 h-8 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" stroke-dashoffset="10"/>
+            </svg>
+            <span class="text-sm font-medium text-slate-600 dark:text-slate-300">加载中...</span>
+          </div>
+        </div>
+
         <!-- 标题栏 -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/5 flex-shrink-0">
           <div class="flex items-center gap-3">
@@ -202,7 +354,8 @@ async function submit() {
               <div v-for="field in currentSchema" :key="field" class="flex flex-col gap-1.5">
                 <span class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{{ field }}</span>
                 <input
-                  v-model="attrs[field]"
+                  :value="getAttr(field)"
+                  @input="e => setAttr(field, e.target.value)"
                   type="text"
                   :placeholder="`请输入${field}`"
                   class="w-full py-2.5 px-3.5 rounded-xl text-sm text-slate-900 dark:text-white
@@ -236,6 +389,24 @@ async function submit() {
             <p class="text-xs text-slate-400 dark:text-slate-500 mt-1.5">系统根据大类与规格属性自动拼接生成</p>
           </div>
 
+          <!-- SKU编号预览 -->
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">SKU 编号预览</label>
+            <div class="px-4 py-3.5 rounded-xl text-sm min-h-[52px] flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5">
+              <span v-if="skuPreviewLoading" class="flex items-center gap-2 text-slate-400">
+                <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="31.4" stroke-dashoffset="10"/>
+                </svg>
+                翻译中...
+              </span>
+              <span v-else-if="skuPreview" class="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                {{ skuPreview }}
+              </span>
+              <span v-else class="text-slate-400 dark:text-slate-500 italic">填写规格信息后自动生成</span>
+            </div>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1.5">格式：大类拼音_规格1_规格2...</p>
+          </div>
+
           <!-- 库存信息 -->
           <div class="grid grid-cols-3 gap-5">
             <div>
@@ -248,7 +419,15 @@ async function submit() {
             </div>
             <div>
               <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">成本单价 (元)</label>
-              <input v-model.number="form.cost_price" type="number" min="0" step="0.01" placeholder="0.00" class="w-full py-2.5 px-3.5 rounded-xl text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 focus:outline-none transition-all placeholder-slate-400" />
+              <div
+                class="px-4 py-2.5 rounded-xl text-sm text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 focus:outline-none transition-all cursor-not-allowed"
+                :title="form.category_id ? '此价格继承自所选的产品大类，请在「产品大类管理」中修改' : '请先选择一个产品大类'"
+              >
+                <span v-if="form.cost_price && form.cost_price > 0">
+                  <span class="text-slate-400 dark:text-slate-500">￥</span><span class="text-slate-500 dark:text-slate-400 font-medium">{{ Number(form.cost_price).toFixed(2) }}</span>
+                </span>
+                <span v-else class="text-slate-400 dark:text-slate-500">选择大类后自动填充</span>
+              </div>
             </div>
           </div>
 
@@ -278,8 +457,8 @@ async function submit() {
           <button @click="$emit('close')" class="flex-1 py-2.5 text-sm font-medium rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
             取消
           </button>
-          <button @click="submit" :disabled="submitting" class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 shadow-md shadow-indigo-500/20 hover:from-indigo-600 hover:to-indigo-700 active:scale-95 transition-all disabled:opacity-50 cursor-pointer">
-            {{ submitting ? '提交中…' : (mode === 'add' ? '确认新增' : '保存修改') }}
+          <button @click="submit" class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 shadow-md shadow-indigo-500/20 hover:from-indigo-600 hover:to-indigo-700 active:scale-95 transition-all cursor-pointer">
+            {{ mode === 'add' ? '确认新增' : '保存修改' }}
           </button>
         </div>
       </div>

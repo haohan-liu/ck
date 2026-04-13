@@ -31,3 +31,8 @@ export function resetAllProducts() {
 export function updateProductOrder(items) {
   return api.post('/products/reorder', { items })
 }
+
+// 获取 SKU 预览（实时翻译）
+export function getSkuPreview(categoryId, attributes) {
+  return api.post('/products/sku-preview', { category_id: categoryId, attributes })
+}

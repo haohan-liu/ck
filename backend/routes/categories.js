@@ -23,7 +23,7 @@ function formatCategory(cat) {
 }
 
 router.get('/', (req, res) => {
-  const categories = getAll('SELECT * FROM categories ORDER BY id');
+  const categories = getAll('SELECT * FROM categories ORDER BY sort_order ASC, id ASC');
   res.json({ success: true, data: categories.map(formatCategory) });
 });
 
@@ -38,38 +38,48 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, template_schema } = req.body;
-  if (!name) {
-    return res.status(400).json({ success: false, error: '名称不能为空' });
+  const { name, template_schema, price } = req.body;
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ success: false, error: '大类名称不能为空' });
   }
+  const trimmedName = String(name).trim();
   const schema = Array.isArray(template_schema) ? template_schema : [];
+  const priceValue = Number(price) || 0;
   const result = runInsert(
-    'INSERT INTO categories (name, template_schema, created_at) VALUES (?, ?, ?)',
-    [name.trim(), JSON.stringify(schema), localDateTime()]
+    'INSERT INTO categories (name, template_schema, price, sort_order, created_at) VALUES (?, ?, ?, ?, ?)',
+    [trimmedName, JSON.stringify(schema), priceValue, 0, localDateTime()]
   );
   if (result.success) {
     const newCategory = getOne('SELECT * FROM categories WHERE id = ?', [result.lastId]);
     res.json({ success: true, data: formatCategory(newCategory) });
   } else {
+    if (result.error && result.error.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ success: false, error: '该产品大类已存在，请勿重复添加' });
+    }
     res.status(500).json({ success: false, error: result.error });
   }
 });
 
 router.put('/:id', (req, res) => {
   const { id } = req.params;
-  const { name, template_schema } = req.body;
-  if (!name) {
-    return res.status(400).json({ success: false, error: '名称不能为空' });
+  const { name, template_schema, price } = req.body;
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ success: false, error: '大类名称不能为空' });
   }
+  const trimmedName = String(name).trim();
   const schema = Array.isArray(template_schema) ? template_schema : [];
+  const priceValue = Number(price) || 0;
   const result = runQuery(
-    'UPDATE categories SET name = ?, template_schema = ? WHERE id = ?',
-    [name.trim(), JSON.stringify(schema), id]
+    'UPDATE categories SET name = ?, template_schema = ?, price = ?, updated_at = ? WHERE id = ?',
+    [trimmedName, JSON.stringify(schema), priceValue, localDateTime(), id]
   );
   if (result.success) {
     const updated = getOne('SELECT * FROM categories WHERE id = ?', [id]);
     res.json({ success: true, data: formatCategory(updated) });
   } else {
+    if (result.error && result.error.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ success: false, error: '该产品大类已存在，请勿重复添加' });
+    }
     res.status(500).json({ success: false, error: result.error });
   }
 });
@@ -89,6 +99,38 @@ router.delete('/:id', (req, res) => {
   } else {
     res.status(500).json({ success: false, error: result.error });
   }
+});
+
+/**
+ * POST /api/categories/reorder
+ * 批量更新大类排序
+ * 请求体: { items: [{ id: number, sort_order: number }, ...] }
+ */
+router.post('/reorder', (req, res) => {
+  const { items } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, error: '缺少 items 参数或数组为空' });
+  }
+
+  for (const item of items) {
+    if (typeof item.id !== 'number' || typeof item.sort_order !== 'number') {
+      return res.status(400).json({ success: false, error: '每个 item 必须包含有效的 id 和 sort_order' });
+    }
+  }
+
+  let updated = 0;
+  for (const item of items) {
+    const result = runQuery(
+      'UPDATE categories SET sort_order = ? WHERE id = ?',
+      [item.sort_order, item.id]
+    );
+    if (result.success) {
+      updated++;
+    }
+  }
+
+  res.json({ success: true, message: '排序已保存', updated });
 });
 
 module.exports = router;

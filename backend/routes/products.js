@@ -1,27 +1,97 @@
 const express = require('express');
 const router = express.Router();
 const { getAll, getOne, runInsert, runQuery } = require('../db');
+const { pinyin } = require('pinyin-pro');
+const { translate } = require('bing-translate-api');
 
-const PINYIN_PREFIX = {
-  '奥迪盖子': 'ADGZ',
-  '雷克萨斯': 'LKS',
-  '路虎旋钮': 'LHXN',
-  '前按键': 'QAJ',
-  '黑钛色': 'HTS',
-  '手动挡': 'SCD',
-};
+// 翻译结果缓存（避免重复翻译）
+const translationCache = new Map();
 
-function getPrefixByCategoryName(name) {
-  return PINYIN_PREFIX[name] || name.slice(0, 2).toUpperCase();
+function getPinyinInitial(name) {
+  if (!name) return '';
+  try {
+    const result = pinyin(name, { pattern: 'first', toneType: 'none' });
+    return result.replace(/\s+/g, '').toUpperCase() || name.slice(0, 2).toUpperCase();
+  } catch (e) {
+    return name.slice(0, 2).toUpperCase();
+  }
 }
 
-function generateSkuCode(categoryName) {
-  const prefix = getPrefixByCategoryName(categoryName);
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const random = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
-  return `${prefix}-${year}${month}-${random}`;
+// 检测字符串是否包含中文
+function hasChinese(str) {
+  return /[\u4e00-\u9fa5]/.test(str);
+}
+function hasChinese(str) {
+  return /[\u4e00-\u9fa5]/.test(str);
+}
+
+// 检测是否需要翻译（包含中文或中文+数字组合）
+function needsTranslation(str) {
+  if (!str) return false;
+  const trimmed = str.trim();
+  // 包含中文的都需要翻译（包括"本田标"、"2016年以前"等）
+  if (/[\u4e00-\u9fa5]/.test(trimmed)) return true;
+  return false;
+}
+
+// 异步翻译单个字符串
+async function translateToEnglish(text) {
+  if (!text || !needsTranslation(text)) return text;
+  try {
+    const result = await translate(text, 'zh-Hans', 'en', false);
+    return result.translation;
+  } catch (e) {
+    console.error('[SKU] 翻译失败:', e.message);
+    return text;
+  }
+}
+
+// 翻译规格值（带缓存）
+async function translateSpecValue(value) {
+  if (!value) return '';
+  const str = String(value).trim();
+  if (!str) return '';
+
+  // 已经是纯英文或英文+数字混排（A4这种），不翻译
+  if (!hasChinese(str) && /^[A-Za-z0-9\s\-\.]+$/.test(str)) {
+    return str;
+  }
+
+  // 检查缓存
+  if (translationCache.has(str)) {
+    return translationCache.get(str);
+  }
+
+  // 需要翻译
+  const result = await translateToEnglish(str);
+  translationCache.set(str, result);
+  return result;
+}
+
+// 生成SKU编号：大类拼音 + 翻译后的规格信息（并行翻译）
+async function generateSkuCode(categoryName, attributes, templateSchema) {
+  const prefix = getPinyinInitial(categoryName);
+  
+  // 并行翻译所有规格值
+  const specPromises = templateSchema.map(async (field) => {
+    const value = attributes && attributes[field];
+    if (value && String(value).trim()) {
+      return await translateSpecValue(String(value).trim());
+    }
+    return null;
+  });
+  
+  const results = await Promise.all(specPromises);
+  const translatedSpecs = results.filter(Boolean);
+  
+  // 拼接规格信息（用下划线连接）
+  const specPart = translatedSpecs.join('_');
+  
+  if (specPart) {
+    return `${prefix}_${specPart}`;
+  }
+  
+  return prefix;
 }
 
 /**
@@ -62,6 +132,42 @@ router.get('/', (req, res) => {
   res.json({ success: true, data: products.map(formatProduct) });
 });
 
+// SKU 预览翻译 API
+router.post('/sku-preview', async (req, res) => {
+  const { category_id, attributes } = req.body;
+
+  if (!category_id) {
+    return res.status(400).json({ success: false, error: '缺少 category_id' });
+  }
+
+  try {
+    const category = getOne('SELECT * FROM categories WHERE id = ?', [category_id]);
+    if (!category) {
+      return res.status(400).json({ success: false, error: '无效的大类 ID' });
+    }
+
+    // 解析 template_schema
+    let templateSchema = [];
+    if (category.template_schema) {
+      try {
+        templateSchema = typeof category.template_schema === 'string'
+          ? JSON.parse(category.template_schema)
+          : category.template_schema;
+      } catch (e) {
+        templateSchema = [];
+      }
+    }
+
+    // 生成 SKU 预览（带翻译）
+    const skuPreview = await generateSkuCode(category.name, attributes || {}, templateSchema);
+
+    res.json({ success: true, data: { sku_code: skuPreview } });
+  } catch (e) {
+    console.error('[SKU预览] 生成失败:', e);
+    res.status(500).json({ success: false, error: '生成SKU预览失败' });
+  }
+});
+
 router.get('/sku/:code', (req, res) => {
   const { code } = req.params;
   const product = getOne(
@@ -88,7 +194,7 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const {
     category_id, name, attributes, remark,
     location_code, current_stock, min_stock, unit, cost_price
@@ -103,12 +209,39 @@ router.post('/', (req, res) => {
     return res.status(400).json({ success: false, error: '无效的大类 ID' });
   }
 
-  let sku_code = generateSkuCode(category.name);
+  // 检查是否已存在完全相同的商品（相同大类、名称、规格属性）
+  const attrsStr = JSON.stringify(attributes || {});
+  const existingProduct = getOne(
+    'SELECT id, sku_code, name FROM products WHERE category_id = ? AND name = ? AND attributes = ?',
+    [category_id, name.trim(), attrsStr]
+  );
+  if (existingProduct) {
+    return res.status(400).json({ 
+      success: false, 
+      error: `该商品「${existingProduct.name}」已存在，请勿重复创建` 
+    });
+  }
+
+  // 解析 template_schema
+  let templateSchema = [];
+  if (category.template_schema) {
+    try {
+      templateSchema = typeof category.template_schema === 'string' 
+        ? JSON.parse(category.template_schema) 
+        : category.template_schema;
+    } catch (e) {
+      templateSchema = [];
+    }
+  }
+
+  // 异步生成SKU（包含翻译后的规格信息）
+  let sku_code = await generateSkuCode(category.name, attributes, templateSchema);
   let attempts = 0;
   while (attempts < 20) {
     const existing = getOne('SELECT id FROM products WHERE sku_code = ?', [sku_code]);
     if (!existing) break;
-    sku_code = generateSkuCode(category.name);
+    // SKU冲突时添加序号后缀
+    sku_code = await generateSkuCode(category.name, attributes, templateSchema) + `-${attempts + 1}`;
     attempts++;
   }
 
