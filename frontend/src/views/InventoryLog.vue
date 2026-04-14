@@ -829,16 +829,32 @@ onMounted(loadLogs)
 
       <!-- 筛选栏 -->
       <div class="mt-4">
-        <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-2 lg:gap-3">
-          <!-- 下拉筛选 -->
+        <!-- 手机端：一行布局（筛选图标 + 搜索） -->
+        <div class="flex lg:hidden items-center gap-2">
+          <MyFilterSelect
+            v-model="filterType"
+            :options="typeOptions"
+            placeholder="操作类型"
+            @change="() => { currentPage = 1; loadLogs(); }"
+            :compact="true"
+          />
+          <div class="flex-1 min-w-0 h-10">
+            <MyFilterSearch
+              v-model="filterKeyword"
+              placeholder="搜索商品名称 / SKU / 运单号"
+              @search="onKeywordInput"
+            />
+          </div>
+        </div>
+
+        <!-- PC端：原有布局（筛选 + 搜索 + 重置） -->
+        <div class="hidden lg:flex items-stretch gap-2 lg:gap-3">
           <MyFilterSelect
             v-model="filterType"
             :options="typeOptions"
             placeholder="操作类型"
             @change="() => { currentPage = 1; loadLogs(); }"
           />
-
-          <!-- 搜索框 -->
           <div class="flex-1 min-w-0">
             <MyFilterSearch
               v-model="filterKeyword"
@@ -846,7 +862,6 @@ onMounted(loadLogs)
               @search="onKeywordInput"
             />
           </div>
-
           <!-- 重置按钮 -->
           <button
             v-if="filterType || filterKeyword"
@@ -1034,19 +1049,19 @@ onMounted(loadLogs)
       </div>
 
       <!-- 有数据：平板/手机卡片列表 (< lg) -->
-      <div v-if="!loading && logs.length > 0" class="lg:hidden space-y-3">
+      <div v-if="!loading && logs.length > 0" class="lg:hidden space-y-3 px-3 sm:px-4">
         <div
           v-for="log in logs"
           :key="log.id"
           :class="[
-            'rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm p-4',
+            'rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm',
             selectMode && selectedIds.has(log.id) ? 'border-violet-300 dark:border-violet-500/30' : ''
           ]"
         >
           <!-- 顶部栏：选择 + 时间 + 类型 -->
-          <div class="flex items-center justify-between gap-2 mb-3">
+          <div class="px-3 pt-2.5 pb-2 flex items-center justify-between gap-2">
             <!-- 移动端复选框 -->
-            <div v-if="selectMode" class="flex items-center gap-2 shrink-0">
+            <div v-if="selectMode" class="flex items-center shrink-0">
               <label class="custom-checkbox">
                 <input
                   type="checkbox"
@@ -1056,52 +1071,57 @@ onMounted(loadLogs)
                 <span class="checkmark"></span>
               </label>
             </div>
-            <span class="text-xs text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap">{{ formatDate(log.created_at) }}</span>
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0" :class="typeClass(log.type)">
-              <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="typeDotClass(log.type)"></span>
+            <span class="text-[11px] text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap">{{ formatDate(log.created_at) }}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded shrink-0" :class="typeClass(log.type)">
+              <span class="w-1 h-1 rounded-full shrink-0" :class="typeDotClass(log.type)"></span>
               {{ typeLabel(log.type) }}
             </span>
           </div>
 
           <!-- 商品名称 -->
-          <p class="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-3">{{ log.product_name || '-' }}</p>
+          <div class="px-3 pb-2">
+            <p class="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-2">{{ log.product_name || '-' }}</p>
 
-          <!-- 核��数据网格 -->
-          <div class="grid grid-cols-3 gap-3 mb-3">
-            <!-- 变动数量 -->
-            <div class="text-center">
-              <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">变动</p>
-              <p class="text-lg font-bold leading-none" :class="log.type === 'in' || log.type === 'add' ? 'text-emerald-500' : (log.type === 'out' ? 'text-rose-500' : 'text-amber-500')">
-                {{ log.type === 'in' || log.type === 'add' ? '+' : (log.type === 'out' ? '-' : '') }}{{ safeStock(log.quantity) }}
-              </p>
-            </div>
-            <!-- 操作前 -->
-            <div class="text-center">
-              <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">前</p>
-              <p class="text-base font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_before) }}</p>
-            </div>
-            <!-- 操作后 -->
-            <div class="text-center">
-              <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">后</p>
-              <p class="text-base font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_after) }}</p>
+            <!-- 核心数据网格 - 紧凑 -->
+            <div class="flex items-center justify-between gap-1.5 py-1.5 px-2 rounded-lg" style="background: var(--bg-secondary);">
+              <!-- 变动数量 -->
+              <div class="text-center flex-1">
+                <p class="text-[15px] font-bold leading-none" :class="log.type === 'in' || log.type === 'add' ? 'text-emerald-500' : (log.type === 'out' ? 'text-rose-500' : 'text-amber-500')">
+                  {{ log.type === 'in' || log.type === 'add' ? '+' : (log.type === 'out' ? '-' : '') }}{{ safeStock(log.quantity) }}
+                </p>
+                <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">变动</p>
+              </div>
+              <div class="w-px h-7" style="background: var(--border-default);"></div>
+              <!-- 操作前 -->
+              <div class="text-center flex-1">
+                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_before) }}</p>
+                <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">前</p>
+              </div>
+              <div class="w-px h-7" style="background: var(--border-default);"></div>
+              <!-- 操作后 -->
+              <div class="text-center flex-1">
+                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_after) }}</p>
+                <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">后</p>
+              </div>
             </div>
           </div>
 
           <!-- 附加信息 -->
-          <div v-if="log.category_name || log.tracking_number || log.note" class="flex items-start gap-2 flex-wrap text-xs">
-            <span v-if="log.category_name" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
-              </svg>
-              {{ log.category_name }}
-            </span>
-            <span v-if="log.tracking_number" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
-              </svg>
-              {{ log.tracking_number }}
-            </span>
-            <span v-if="log.note" class="text-slate-500 dark:text-slate-400 truncate flex-1">{{ log.note }}</span>
+          <div v-if="log.category_name || log.tracking_number || log.note" class="px-3 pb-2.5 flex items-center justify-between gap-1.5">
+            <!-- 左侧：运单号 + 大类（右对齐组） -->
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span v-if="log.tracking_number" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded font-mono bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
+                </svg>
+                {{ log.tracking_number }}
+              </span>
+              <span v-if="log.category_name" class="inline-flex items-center px-1.5 py-0.5 text-[10px] rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">
+                {{ log.category_name }}
+              </span>
+            </div>
+            <!-- 右侧：备注（占据剩余空间，左对齐） -->
+            <span v-if="log.note" class="text-[11px] text-slate-500 dark:text-slate-400 truncate text-right min-w-0">{{ log.note }}</span>
           </div>
         </div>
       </div>

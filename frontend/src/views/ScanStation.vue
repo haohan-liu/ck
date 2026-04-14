@@ -734,8 +734,7 @@ onUnmounted(async () => {
                   stroke-linejoin="round"
                   :style="oneToOneMode ? 'color: #f43f5e;' : 'color: var(--accent);'"
                 >
-                  <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                  <path d="m9 12 2 2 4-4"/>
+                  <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="6" y="6" width="4" height="4" rx="1"/>
                 </svg>
               </div>
               <div class="min-w-0">
@@ -1251,8 +1250,7 @@ onUnmounted(async () => {
                 stroke-linejoin="round"
                 :style="oneToOneMode ? 'color: #f43f5e;' : 'color: var(--accent);'"
               >
-                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                <path d="m9 12 2 2 4-4"/>
+                <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="6" y="6" width="4" height="4" rx="1"/>
               </svg>
             </div>
             <div>

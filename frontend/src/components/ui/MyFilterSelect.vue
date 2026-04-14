@@ -16,6 +16,7 @@ const props = defineProps({
   },
   disabled: Boolean,
   style: [String, Object],
+  compact: Boolean, // 紧凑模式：只显示图标
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -30,6 +31,42 @@ const selectedOption = computed(() => {
 
 const displayText = computed(() => {
   return selectedOption.value ? selectedOption.value.label : props.placeholder
+})
+
+const buttonStyle = computed(() => {
+  const baseStyle = {
+    height: '40px',
+    borderRadius: '12px',
+    backgroundColor: 'var(--input-bg)',
+    border: '1px solid var(--input-border)',
+    outline: 'none',
+    transition: 'border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  }
+  
+  // 紧凑模式：只显示图标，居中显示
+  if (props.compact) {
+    Object.assign(baseStyle, {
+      padding: '0 12px',
+      borderColor: isOpen.value ? 'var(--filter-accent)' : 'var(--input-border)',
+      color: isOpen.value ? 'var(--filter-accent)' : 'var(--text-secondary)',
+      boxShadow: isOpen.value ? '0 0 0 3px var(--filter-glow)' : 'none',
+      width: '40px' // 正方形按钮
+    })
+  } else {
+    Object.assign(baseStyle, {
+      padding: '0 16px',
+      fontSize: '14px',
+      fontWeight: '500',
+      borderColor: isOpen.value ? 'var(--filter-accent)' : 'var(--input-border)',
+      color: isOpen.value ? 'var(--filter-accent)' : 'var(--text-secondary)',
+      boxShadow: isOpen.value ? '0 0 0 3px var(--filter-glow)' : 'none'
+    })
+  }
+  
+  return baseStyle
 })
 
 function toggle() {
@@ -69,24 +106,9 @@ onUnmounted(() => {
       ref="buttonRef"
       type="button"
       :disabled="disabled"
-      class="flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-      style="
-        height: 40px;
-        padding: 0 16px;
-        font-size: 14px;
-        font-weight: 500;
-        border-radius: 12px;
-        background-color: var(--input-bg);
-        border: 1px solid var(--input-border);
-        color: var(--text-secondary);
-        outline: none;
-        transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-      "
-      :style="{
-        borderColor: isOpen ? 'var(--filter-accent)' : 'var(--input-border)',
-        color: isOpen ? 'var(--filter-accent)' : 'var(--text-secondary)',
-        boxShadow: isOpen ? '0 0 0 3px var(--filter-glow)' : 'none'
-      }"
+      class="flex items-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+      :class="compact ? 'h-full justify-center px-0' : 'gap-2'"
+      :style="buttonStyle"
       @click="toggle"
     >
       <!-- 筛选图标 -->
@@ -99,11 +121,12 @@ onUnmounted(() => {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
       </svg>
 
-      <!-- 文字 -->
-      <span class="truncate">{{ displayText }}</span>
+      <!-- 文字 (compact 模式下隐藏) -->
+      <span v-if="!compact" class="truncate">{{ displayText }}</span>
 
       <!-- 箭头 -->
       <svg
+        v-if="!compact"
         class="shrink-0 transition-transform duration-200"
         style="width: 16px; height: 16px;"
         :style="{ 

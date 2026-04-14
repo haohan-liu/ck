@@ -545,19 +545,20 @@ onMounted(async () => {
       
       <div class="flex items-center justify-between gap-4 flex-wrap">
         <!-- 标题 -->
-        <div>
+        <div class="shrink-0">
           <h1 class="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0" style="color: var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="m3 6 6-3 6 3 6-3 3 3-6 3 6 3 3 3-6-3-6 3"/>
+              <path d="m15 6 6-3 6 3 6-3 3z"/>
             </svg>
             库位地图
           </h1>
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">货架布局总览 · 实时库存可视化</p>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 flex-1 max-w-xl">
-          <!-- 搜索框 -->
-          <div class="flex-1 min-w-0">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 flex-1 w-full sm:max-w-xl">
+          <!-- 搜索框 - 手机端独占一行 -->
+          <div class="w-full sm:flex-1 min-w-0">
             <MyFilterSearch
               v-model="searchKeyword"
               placeholder="搜索商品名称或SKU..."
@@ -565,25 +566,28 @@ onMounted(async () => {
             />
           </div>
 
-          <!-- 刷新按钮 -->
-          <button @click="refresh" :disabled="loadingStock"
-                  class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all shrink-0"
-                  style="background: var(--bg-tertiary); border: 1px solid var(--border-default); color: var(--text-secondary);">
-            <svg class="w-3.5 h-3.5" :class="loadingStock ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-            </svg>
-            <span class="hidden sm:inline">刷新</span>
-          </button>
+          <!-- 操作按钮 - 手机端并排 -->
+          <div class="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start">
+            <!-- 刷新按钮 -->
+            <button @click="refresh" :disabled="loadingStock"
+                    class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all shrink-0"
+                    style="background: var(--bg-tertiary); border: 1px solid var(--border-default); color: var(--text-secondary);">
+              <svg class="w-3.5 h-3.5" :class="loadingStock ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span class="hidden sm:inline">刷新</span>
+            </button>
 
-          <!-- 新增货架 -->
-          <button @click="addShelf"
-                  class="px-3 py-2 rounded-xl text-xs font-medium text-white transition-all flex items-center gap-1.5 shadow-lg shrink-0"
-                  style="background: var(--accent);">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            <span>新增货架</span>
-          </button>
+            <!-- 新增货架 -->
+            <button @click="addShelf"
+                    class="px-3 py-2 rounded-xl text-xs font-medium text-white transition-all flex items-center gap-1.5 shadow-lg shrink-0 sm:flex-initial justify-center min-w-[100px]"
+                    style="background: var(--accent);">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              <span>新增货架</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -76,26 +76,43 @@ onMounted(loadStats)
   <div class="h-full overflow-auto p-3 sm:p-4 lg:p-6">
     <!-- 页面标题 -->
     <div class="mb-4 md:mb-6">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 class="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">统计面板</h1>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">实时库存概况与业务数据</p>
+      <div class="flex items-center justify-between flex-nowrap gap-3">
+        <div class="flex items-center gap-3 min-w-0 flex-shrink-0">
+          <div>
+            <h1 class="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">统计面板</h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">实时库存概况与业务数据</p>
+          </div>
         </div>
-        <div class="flex items-center gap-4">
-          <div v-if="refreshTime" class="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+        <div class="flex items-center gap-4 flex-shrink-0">
+          <!-- 电脑端显示时间 -->
+          <div v-if="refreshTime" class="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
             <span>{{ refreshTime }}</span>
           </div>
+          <!-- 手机端刷新按钮（仅图标，靠右） -->
           <button
             @click="loadStats"
-            class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
+            class="sm:hidden w-9 h-9 rounded-full flex items-center justify-center
+                   text-indigo-500 dark:text-indigo-400
+                   hover:text-indigo-600 dark:hover:text-indigo-300
+                   hover:bg-indigo-500/10 dark:hover:bg-indigo-500/15
+                   active:scale-90 transition-all duration-200 cursor-pointer flex-shrink-0"
+          >
+            <svg class="w-5 h-5" :class="loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+          <!-- 电脑端刷新按钮（带文字） -->
+          <button
+            @click="loadStats"
+            class="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
                    bg-white dark:bg-slate-800
                    border border-slate-200 dark:border-white/10
                    text-slate-600 dark:text-slate-400
                    hover:bg-slate-50 dark:hover:bg-white/5
-                   active:scale-95 transition-all duration-200 cursor-pointer"
+                   active:scale-95 transition-all duration-200 cursor-pointer flex-shrink-0"
           >
             <svg class="w-4 h-4 shrink-0" :class="loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -132,18 +149,18 @@ onMounted(loadStats)
     <div v-else-if="stats">
 
       <!-- ════ 核心指标卡片 (PC: 4列 | 平板: 2列 | 手机: 2列) ════ -->
-      <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 lg:gap-5 mb-6">
+      <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-5 mb-4 md:mb-6">
 
         <!-- 总产品数 -->
-        <div class="rounded-xl p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">总产品数</p>
-              <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2 leading-none">{{ stats.totalProducts }}</p>
-              <p class="text-xs text-slate-400 dark:text-slate-500 mt-2">件商品</p>
+        <div class="rounded-xl p-3 sm:p-4 md:p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
+          <div class="flex items-start justify-between gap-2 sm:gap-3">
+            <div class="min-w-0">
+              <p class="text-[10px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-tight">总产品数</p>
+              <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mt-1 sm:mt-2 leading-tight">{{ stats.totalProducts }}</p>
+              <p class="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 mt-1 sm:mt-2">件商品</p>
             </div>
-            <div class="w-11 h-11 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
               </svg>
             </div>
@@ -151,15 +168,15 @@ onMounted(loadStats)
         </div>
 
         <!-- 总库存数量 -->
-        <div class="rounded-xl p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">总库存数量</p>
-              <p class="text-3xl font-bold text-emerald-500 mt-2 leading-none">{{ stats.totalStock }}</p>
-              <p class="text-xs text-slate-400 dark:text-slate-500 mt-2">件</p>
+        <div class="rounded-xl p-3 sm:p-4 md:p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
+          <div class="flex items-start justify-between gap-2 sm:gap-3">
+            <div class="min-w-0">
+              <p class="text-[10px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-tight">总库存数量</p>
+              <p class="text-xl sm:text-2xl md:text-3xl font-bold text-emerald-500 mt-1 sm:mt-2 leading-tight">{{ stats.totalStock }}</p>
+              <p class="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 mt-1 sm:mt-2">件</p>
             </div>
-            <div class="w-11 h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
               </svg>
             </div>
@@ -167,42 +184,40 @@ onMounted(loadStats)
         </div>
 
         <!-- 库存总价值 -->
-        <div class="rounded-xl p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">库存总价值</p>
-              <p class="text-2xl lg:text-3xl font-bold text-slate-900 dark:text-white mt-2 leading-none truncate">¥{{ formatCurrency(stats.totalValue) }}</p>
+        <div class="rounded-xl p-3 sm:p-4 md:p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
+          <div class="flex items-start justify-between gap-2 sm:gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[10px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-tight">库存总价值</p>
+              <p class="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white mt-1 sm:mt-2 leading-tight truncate">¥{{ formatCurrency(stats.totalValue) }}</p>
             </div>
-            <div class="w-11 h-11 rounded-xl bg-sky-500/10 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
+            <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-sky-500/10 flex items-center justify-center shrink-0">
+              <span class="text-sky-500 font-bold" style="font-size: 18px; font-family: Arial, sans-serif;">¥</span>
             </div>
           </div>
         </div>
 
         <!-- 低库存预警 -->
         <div
-          class="rounded-xl p-5 bg-white dark:bg-slate-900 border shadow-sm overflow-hidden relative"
+          class="rounded-xl p-3 sm:p-4 md:p-5 bg-white dark:bg-slate-900 border shadow-sm overflow-hidden relative"
           :class="stats.lowStockCount > 0
             ? 'border-rose-200 dark:border-rose-500/30'
             : 'border-emerald-200 dark:border-emerald-500/30'"
         >
           <!-- 警示条纹 -->
           <div v-if="stats.lowStockCount > 0" class="absolute top-0 right-0 w-1.5 h-full bg-gradient-to-b from-rose-400 to-rose-600"></div>
-          <div class="flex items-start justify-between gap-3 relative z-10">
-            <div>
-              <p class="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">低库存预警</p>
-              <p class="text-3xl font-bold mt-2 leading-none" :class="stats.lowStockCount > 0 ? 'text-rose-500' : 'text-emerald-500'">{{ stats.lowStockCount }}</p>
-              <p class="text-xs mt-2" :class="stats.zeroStockCount > 0 ? 'text-rose-500' : 'text-slate-400 dark:text-slate-500'">
+          <div class="flex items-start justify-between gap-2 sm:gap-3 relative z-10">
+            <div class="min-w-0 flex-1">
+              <p class="text-[10px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-tight">低库存预警</p>
+              <p class="text-xl sm:text-2xl md:text-3xl font-bold mt-1 sm:mt-2 leading-tight" :class="stats.lowStockCount > 0 ? 'text-rose-500' : 'text-emerald-500'">{{ stats.lowStockCount }}</p>
+              <p class="text-[10px] sm:text-xs mt-1 sm:mt-2 leading-tight" :class="stats.zeroStockCount > 0 ? 'text-rose-500' : 'text-slate-400 dark:text-slate-500'">
                 其中缺货 {{ stats.zeroStockCount }} 件
               </p>
             </div>
             <div
-              class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0"
               :class="stats.lowStockCount > 0 ? 'bg-rose-500/10' : 'bg-emerald-500/10'"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0" :class="stats.lowStockCount > 0 ? 'text-rose-500' : 'text-emerald-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" :class="stats.lowStockCount > 0 ? 'text-rose-500' : 'text-emerald-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>
               </svg>
             </div>

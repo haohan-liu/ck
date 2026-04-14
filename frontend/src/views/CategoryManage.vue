@@ -292,27 +292,26 @@ async function onDragEnd(evt) {
             <div
               class="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden"
             >
-              <!-- 卡片头部：拖拽手柄 + 名称 + 操作按钮 -->
-              <div class="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
-                <div class="drag-handle cursor-grab active:cursor-grabbing p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors shrink-0 self-start" title="拖动排序">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- 卡片头部：拖拽手柄 + 名称 + 单价 -->
+              <div class="px-3 pt-2.5 pb-2 flex items-start gap-2">
+                <!-- 拖拽手柄 - 缩小 -->
+                <div class="drag-handle cursor-grab active:cursor-grabbing p-1 rounded hover:bg-slate-100 dark:hover:bg-white/5 transition-colors shrink-0 self-center" title="拖动排序">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
                     <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
                   </svg>
                 </div>
-                <div class="flex-1 min-w-0">
-                  <h3 class="text-base font-bold text-slate-900 dark:text-white leading-snug">{{ cat.name }}</h3>
-                  <div class="flex items-center gap-2 mt-1.5">
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 5v14"/><path d="M5 12h14"/>
-                      </svg>
-                      ¥{{ Number(cat.price || 0).toFixed(2) }}
-                    </span>
-                    <span class="text-xs text-slate-400 dark:text-slate-500">单价</span>
-                  </div>
+
+                <!-- 左侧：名称 + 单价 -->
+                <div class="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                  <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug">{{ cat.name }}</h3>
+                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20">
+                    ¥{{ Number(cat.price || 0).toFixed(2) }}
+                  </span>
                 </div>
-                <div class="flex gap-1 shrink-0 ml-2">
+
+                <!-- 右侧：操作按钮 -->
+                <div class="flex gap-1 shrink-0 self-center">
                   <button @click="openEditModal(cat)" class="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 active:scale-95 transition-all cursor-pointer" title="编辑">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
@@ -327,20 +326,18 @@ async function onDragEnd(evt) {
               </div>
 
               <!-- 规格字段展示 -->
-              <div class="px-4 pb-3">
-                <p class="text-xs text-slate-400 dark:text-slate-500 mb-1.5">规格字段</p>
-                <div class="flex flex-wrap gap-1.5">
-                  <span v-for="(field, fi) in (cat.template_schema || [])" :key="fi" class="inline-flex px-2 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">
+              <div v-if="cat.template_schema && cat.template_schema.length > 0" class="px-3 pb-2">
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-1">规格字段</p>
+                <div class="flex flex-wrap gap-1">
+                  <span v-for="(field, fi) in cat.template_schema" :key="fi" class="inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">
                     {{ field }}
                   </span>
-                  <span v-if="!cat.template_schema || cat.template_schema.length === 0" class="text-xs text-slate-400 dark:text-slate-500 italic">无规格字段</span>
                 </div>
               </div>
 
-              <!-- 底部信息：创建时间 + 拖拽提示 -->
-              <div class="px-4 pb-3 flex items-center justify-between text-xs">
-                <span class="text-slate-400 dark:text-slate-500 font-mono">创建于 {{ cat.created_at ? formatTime(cat.created_at).slice(0, 16) : '-' }}</span>
-                <span class="text-slate-300 dark:text-slate-600 text-[10px]">拖拽手柄可排序</span>
+              <!-- 底部信息：创建时间 -->
+              <div class="px-3 pb-2 flex items-center justify-between">
+                <span class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{{ cat.created_at ? formatTime(cat.created_at).slice(0, 16) : '-' }}</span>
               </div>
             </div>
           </template>
@@ -447,17 +444,17 @@ async function onDragEnd(evt) {
                 大类单价 <span class="text-rose-500">*</span>
               </label>
               <div class="relative">
-                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400 dark:text-slate-500">￥</span>
+                <span class="absolute left-5 top-1/2 -translate-y-1/2 text-sm text-slate-400 dark:text-slate-500 hidden md:block">￥</span>
                 <input
                   v-model="form.price"
                   type="number"
                   min="0"
                   step="0.01"
                   placeholder="0.00"
-                  class="w-full py-3 px-4 pl-8 rounded-xl text-sm text-slate-900 dark:text-white
+                  class="w-full py-3 px-3 pl-3 rounded-xl text-sm text-slate-900 dark:text-white
                          bg-slate-50 dark:bg-slate-800 border-2 border-transparent
                          focus:border-indigo-500 focus:ring-0 focus:outline-none
-                         placeholder-slate-400 transition-all"
+                         placeholder-slate-400 transition-all md:pl-16"
                 />
               </div>
               <p class="text-xs text-slate-400 dark:text-slate-500 mt-1.5">设置该大类下所有商品的默认单价</p>
