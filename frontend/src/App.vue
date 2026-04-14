@@ -180,15 +180,17 @@ function isActive(path) {
         </div>
       </aside>
 
-      <!-- 主内容区 — 悬浮卡片 -->
-      <main class="flex-1 min-w-0 h-full rounded-2xl overflow-hidden
-                   bg-white/70 dark:bg-slate-900/50
-                   backdrop-blur-xl
-                   border border-slate-200/50 dark:border-white/5
-                   shadow-[0_8px_30px_rgb(0,0,0,0.04)]
-                   dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
+    <!-- 主内容区 — 悬浮卡片 -->
+    <main class="flex-1 min-w-0 h-full rounded-2xl overflow-hidden
+                 bg-white/70 dark:bg-slate-900/50
+                 backdrop-blur-xl
+                 border border-slate-200/50 dark:border-white/5
+                 shadow-[0_8px_30px_rgb(0,0,0,0.04)]
+                 dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
+      <div class="h-full overflow-auto p-3 md:p-4 lg:p-6">
         <router-view />
-      </main>
+      </div>
+    </main>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -260,7 +262,7 @@ function isActive(path) {
       </header>
 
       <!-- 主内容 -->
-      <main class="flex-1 overflow-auto">
+      <main class="flex-1 overflow-auto" style="padding-bottom: calc(env(safe-area-inset-bottom) + 64px);">
         <router-view />
       </main>
 
@@ -270,6 +272,7 @@ function isActive(path) {
                bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
                border-t border-slate-100 dark:border-white/5
                pb-safe"
+        style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;"
       >
         <router-link
           v-for="item in navItems"

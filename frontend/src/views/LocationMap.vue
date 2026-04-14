@@ -555,7 +555,7 @@ onMounted(async () => {
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">货架布局总览 · 实时库存可视化</p>
         </div>
 
-        <div class="flex items-center gap-2 md:gap-3 flex-1 max-w-xl">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 flex-1 max-w-xl">
           <!-- 搜索框 -->
           <div class="flex-1 min-w-0">
             <MyFilterSearch
@@ -567,17 +567,17 @@ onMounted(async () => {
 
           <!-- 刷新按钮 -->
           <button @click="refresh" :disabled="loadingStock"
-                  class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+                  class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all shrink-0"
                   style="background: var(--bg-tertiary); border: 1px solid var(--border-default); color: var(--text-secondary);">
             <svg class="w-3.5 h-3.5" :class="loadingStock ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
             </svg>
-            刷新
+            <span class="hidden sm:inline">刷新</span>
           </button>
 
           <!-- 新增货架 -->
           <button @click="addShelf"
-                  class="px-3 py-2 md:px-4 rounded-xl text-xs font-medium text-white transition-all flex items-center gap-1.5 shadow-lg whitespace-nowrap"
+                  class="px-3 py-2 rounded-xl text-xs font-medium text-white transition-all flex items-center gap-1.5 shadow-lg shrink-0"
                   style="background: var(--accent);">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -673,7 +673,7 @@ onMounted(async () => {
     </div>
 
     <!-- ════ 内容区 - 独立滚动 ════ -->
-    <div class="flex-1 overflow-auto px-4 lg:px-6 py-5 lg:py-6 space-y-6">
+    <div class="flex-1 overflow-auto px-3 sm:px-4 lg:px-6 py-4 lg:py-6 space-y-4 md:space-y-6">
 
       <!-- 加载状态 -->
       <div v-if="pageLoading" class="flex justify-center items-center py-20">

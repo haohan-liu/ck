@@ -861,7 +861,7 @@ onMounted(loadLogs)
     </div>
 
     <!-- 日志列表内容 -->
-    <div class="px-4 lg:px-6 py-4 lg:py-5">
+    <div class="px-3 sm:px-4 lg:px-6 py-4 lg:py-5">
 
       <!-- 批量操作栏 -->
       <Transition
@@ -874,7 +874,7 @@ onMounted(loadLogs)
       >
         <div
           v-if="selectMode && selectedCount > 0"
-          class="mb-4 flex items-center justify-between gap-3 p-3 lg:p-4 rounded-xl
+          class="mb-3 md:mb-4 flex items-center justify-between gap-3 p-3 lg:p-4 rounded-xl
                  bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20"
         >
           <div class="flex items-center gap-2 text-sm text-violet-700 dark:text-violet-300">
@@ -933,8 +933,9 @@ onMounted(loadLogs)
       <!-- 有数据：PC 表格 (>= lg) -->
       <div v-else-if="logs.length > 0" class="hidden lg:block">
         <div class="rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
-          <table class="w-full text-sm">
-            <thead>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[900px]">
+              <thead>
               <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
                 <!-- 选择列 -->
                 <th v-if="selectMode" class="w-10 px-5 py-3.5 text-left">
@@ -1028,6 +1029,7 @@ onMounted(loadLogs)
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
@@ -1037,7 +1039,7 @@ onMounted(loadLogs)
           v-for="log in logs"
           :key="log.id"
           :class="[
-            'rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm p-4 sm:p-5',
+            'rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm p-4',
             selectMode && selectedIds.has(log.id) ? 'border-violet-300 dark:border-violet-500/30' : ''
           ]"
         >
@@ -1054,45 +1056,52 @@ onMounted(loadLogs)
                 <span class="checkmark"></span>
               </label>
             </div>
-            <span class="text-xs text-slate-400 dark:text-slate-500 font-mono">{{ formatDate(log.created_at) }}</span>
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg" :class="typeClass(log.type)">
+            <span class="text-xs text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap">{{ formatDate(log.created_at) }}</span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0" :class="typeClass(log.type)">
               <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="typeDotClass(log.type)"></span>
               {{ typeLabel(log.type) }}
             </span>
           </div>
 
           <!-- 商品名称 -->
-          <p class="text-sm font-semibold text-slate-900 dark:text-white leading-snug mb-2">{{ log.product_name || '-' }}</p>
+          <p class="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-3">{{ log.product_name || '-' }}</p>
 
-          <!-- 核心数据 -->
-          <div class="flex items-center justify-between gap-3 mb-3">
-            <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-              <span>{{ safeStock(log.stock_before) }}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m9 18 6-6-6-6"/>
-              </svg>
-              <span class="font-medium text-slate-700 dark:text-slate-200">{{ safeStock(log.stock_after) }}</span>
+          <!-- 核��数据网格 -->
+          <div class="grid grid-cols-3 gap-3 mb-3">
+            <!-- 变动数量 -->
+            <div class="text-center">
+              <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">变动</p>
+              <p class="text-lg font-bold leading-none" :class="log.type === 'in' || log.type === 'add' ? 'text-emerald-500' : (log.type === 'out' ? 'text-rose-500' : 'text-amber-500')">
+                {{ log.type === 'in' || log.type === 'add' ? '+' : (log.type === 'out' ? '-' : '') }}{{ safeStock(log.quantity) }}
+              </p>
             </div>
-            <span
-              class="text-base font-bold tabular-nums"
-              :class="log.type === 'in' || log.type === 'add' ? 'text-emerald-500' : (log.type === 'out' ? 'text-rose-500' : 'text-amber-500')"
-            >
-              {{ log.type === 'in' || log.type === 'add' ? '+' : (log.type === 'out' ? '-' : '') }}{{ safeStock(log.quantity) }}
-            </span>
+            <!-- 操作前 -->
+            <div class="text-center">
+              <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">前</p>
+              <p class="text-base font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_before) }}</p>
+            </div>
+            <!-- 操作后 -->
+            <div class="text-center">
+              <p class="text-xs text-slate-400 dark:text-slate-500 mb-1">后</p>
+              <p class="text-base font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_after) }}</p>
+            </div>
           </div>
 
           <!-- 附加信息 -->
-          <div v-if="log.note || log.category_name || log.tracking_number" class="flex items-center gap-2 flex-wrap text-xs text-slate-400 dark:text-slate-500">
-            <span v-if="log.category_name" class="inline-flex px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">
+          <div v-if="log.category_name || log.tracking_number || log.note" class="flex items-start gap-2 flex-wrap text-xs">
+            <span v-if="log.category_name" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>
+              </svg>
               {{ log.category_name }}
             </span>
-            <span v-if="log.tracking_number" class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md font-mono bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20">
+            <span v-if="log.tracking_number" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
               </svg>
               {{ log.tracking_number }}
             </span>
-            <span v-if="log.note" class="truncate flex-1">{{ log.note }}</span>
+            <span v-if="log.note" class="text-slate-500 dark:text-slate-400 truncate flex-1">{{ log.note }}</span>
           </div>
         </div>
       </div>
@@ -1100,7 +1109,7 @@ onMounted(loadLogs)
       <!-- 分页器（确保移动端和PC端都不产生横向滚动条） -->
       <div
         v-if="!loading && logs.length > 0"
-        class="mt-5 flex items-center justify-between gap-4 flex-wrap"
+        class="mt-4 md:mt-5 flex flex-col sm:flex-row items-center justify-between gap-3 md:gap-4"
         style="min-height: 0;"
       >
         <!-- 左侧：总数 + 每页条数（不用 overflow-hidden，避免下拉与圆角被裁切） -->
@@ -1170,55 +1179,35 @@ onMounted(loadLogs)
         </div>
 
         <!-- 中间：页码按钮（自适应收缩，不超出容器） -->
-        <div class="flex items-center justify-center flex-1 min-w-0 gap-1 overflow-hidden">
+        <div class="flex items-center justify-center gap-0.5 overflow-x-auto scroll-touch max-w-full">
           <!-- 上一页 -->
           <button
             @click="prevPage"
             :disabled="currentPage === 1"
-            class="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-medium
+            class="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs sm:text-sm font-medium
                    border border-slate-200 dark:border-white/10
                    text-slate-500 dark:text-slate-400
                    disabled:opacity-40 disabled:cursor-not-allowed
                    hover:bg-slate-50 dark:hover:bg-white/5
                    active:scale-95 transition-all duration-150 cursor-pointer shrink-0"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 19-7-7 7-7"/>
             </svg>
           </button>
-
-          <!-- 页码按钮组 -->
-          <template v-for="(page, idx) in pageButtons" :key="idx">
-            <span
-              v-if="page === '...'"
-              class="flex items-center justify-center w-8 h-8 text-sm text-slate-400 dark:text-slate-500 select-none shrink-0"
-            >…</span>
-            <button
-              v-else
-              @click="goToPage(page)"
-              :class="[
-                'flex items-center justify-center min-w-[2rem] h-8 px-2 rounded-lg text-sm font-medium transition-all duration-150 cursor-pointer shrink-0',
-                page === currentPage
-                  ? 'bg-indigo-500 text-white shadow-sm active:scale-95'
-                  : 'border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 active:scale-95'
-              ]"
-            >
-              {{ page }}
-            </button>
-          </template>
 
           <!-- 下一页 -->
           <button
             @click="nextPage"
             :disabled="currentPage === totalPages || totalPages === 0"
-            class="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-medium
+            class="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs sm:text-sm font-medium
                    border border-slate-200 dark:border-white/10
                    text-slate-500 dark:text-slate-400
                    disabled:opacity-40 disabled:cursor-not-allowed
                    hover:bg-slate-50 dark:hover:bg-white/5
                    active:scale-95 transition-all duration-150 cursor-pointer shrink-0"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7"/>
             </svg>
           </button>

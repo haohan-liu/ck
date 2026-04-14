@@ -197,6 +197,11 @@
   box-sizing: border-box;
 }
 
+/* 移动端 min-w-0 保护：防止 flex 子元素溢出容器 */
+.min-w-0 {
+  min-width: 0;
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
@@ -216,6 +221,23 @@ body {
     color 0.25s ease,
     border-color 0.3s ease,
     box-shadow 0.3s ease;
+}
+
+/* ============================================================
+   移动端触控优化
+   ============================================================ */
+
+/* 所有可点击元素在移动端确保最小触控区域 44x44px */
+@media (max-width: 1023px) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* 输入框最小高度 */
+  input, select, textarea {
+    min-height: 44px;
+  }
 }
 
 /* ============================================================
@@ -399,6 +421,92 @@ button:not(:disabled) {
 }
 
 /* ============================================================
+   移动端全局缩放优化
+   缩小字体、按钮高度、间距，让内容在移动端更紧凑
+   ============================================================ */
+@media (max-width: 768px) {
+  /* 基础字体缩小 */
+  :root {
+    --text-base: 13px;
+    --text-sm: 12px;
+    --text-xs: 11px;
+  }
+
+  /* 页面标题 */
+  h1 { font-size: 1.125rem !important; }  /* 18px -> 16px */
+
+  /* 按钮高度降低 - 但排除开关按钮（开关使用内联样式固定高度） */
+  button:not([style*="height"]), .btn {
+    min-height: 36px !important;
+    height: 36px !important;
+  }
+
+  /* 强制开关按钮高度不被 flex 拉伸 */
+  button.rounded-full[style*="height"] {
+    height: 28px !important;
+    min-height: 28px !important;
+    align-self: auto !important;
+  }
+
+  /* 确保 PC 端扫码布局始终显示 */
+  @media (min-width: 1024px) {
+    .pc-scan-layout {
+      display: flex !important;
+    }
+    .lg\:hidden.mobile-scan-layout {
+      display: none !important;
+    }
+  }
+
+  /* 输入框高度降低 */
+  input, select, textarea {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    font-size: 13px !important;
+  }
+
+  /* 减小内边距 - 使一行能放下更多内容 */
+  .px-6 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .px-5 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+  .px-4 { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+  .px-3 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+
+  .py-6 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
+  .py-5 { padding-top: 1.25rem !important; padding-bottom: 1.25rem !important; }
+  .py-4 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+  .py-3 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+
+  /* 圆角缩小 */
+  .rounded-2xl { border-radius: 0.75rem !important; }
+  .rounded-xl { border-radius: 0.5rem !important; }
+  .rounded-lg { border-radius: 0.375rem !important; }
+  .rounded-md { border-radius: 0.25rem !important; }
+
+  /* 阴影缩小 */
+  .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important; }
+
+  /* 间距缩小 - gap utilities */
+  .gap-6 { gap: 1rem !important; }
+  .gap-5 { gap: 0.875rem !important; }
+  .gap-4 { gap: 0.75rem !important; }
+  .gap-3 { gap: 0.5rem !important; }
+  .gap-2 { gap: 0.375rem !important; }
+  .gap-1 { gap: 0.25rem !important; }
+
+  /* 表格字体缩小 */
+  .text-sm { font-size: 13px !important; }
+  .text-xs { font-size: 11px !important; }
+
+  /* 导出按钮和刷新按钮控制到两行内 */
+  .action-buttons {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+}
+
+/* ============================================================
    全局焦点可见样式
    ============================================================ */
 
@@ -456,6 +564,12 @@ tr {
 @keyframes corner-pulse {
   0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 4px var(--scan-accent)); }
   50%       { opacity: 1;   filter: drop-shadow(0 0 12px var(--scan-accent)); }
+}
+
+/* 等待运单状态 - 红色呼吸闪烁（用于边框和扫描框） */
+@keyframes corner-pulse-red {
+  0%, 100% { opacity: 0.6; border-color: #f87171; filter: drop-shadow(0 0 4px rgba(248, 113, 113, 0.5)); }
+  50%       { opacity: 1;   border-color: #fca5a5; filter: drop-shadow(0 0 16px rgba(248, 113, 113, 0.8)); }
 }
 
 /* 成功徽章弹出 */
@@ -522,22 +636,37 @@ tr {
    必须在全局生效，不使用 scoped
    ============================================================ */
 
-#qr-reader {
+/* 强制视频标签层级置顶，防止被 UI 遮罩层覆盖 */
+#qr-reader,
+#qr-reader-mobile,
+#qr-scanner-container {
   width: 100% !important;
   height: 100% !important;
   border: none !important;
   border-radius: 0 !important;
   overflow: hidden !important;
   background: #000 !important;
+  z-index: 1 !important;
+  position: absolute !important;
 }
 
-#qr-reader video {
+/* 强制 video 标签层级置顶 */
+#qr-reader video,
+#qr-reader-mobile video,
+#qr-scanner-container video {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;
   border-radius: 0 !important;
+  z-index: 1 !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
 }
 
+/* 清除 html5-qrcode 其他内部元素的遮罩 */
 #qr-reader__scan_region {
   background: transparent !important;
   min-height: unset !important;
@@ -593,31 +722,110 @@ tr {
   display: none !important;
 }
 
-#tracking-reader {
+/* ── 统一扫描容器（qr-reader-container）样式 ──────────────── */
+#qr-reader-container,
+#qr-reader-container-mobile {
   width: 100% !important;
+  height: 100% !important;
   border: none !important;
   border-radius: 0 !important;
   overflow: hidden !important;
   background: #000 !important;
+  z-index: 1 !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  display: block !important;
 }
 
-#tracking-reader video {
+/* html5-qrcode 所有可能的视频元素路径 */
+#qr-reader-container video,
+#qr-reader-container-mobile video,
+#qr-reader-container div video,
+#qr-reader-container-mobile div video,
+#qr-reader-container img,
+#qr-reader-container-mobile img,
+#qr-reader-container__scan_region video,
+#qr-reader-container-mobile__scan_region video,
+[id^="qr-reader-container"] video,
+[id*="qr-reader-container"] video {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover !important;
+  border-radius: 0 !important;
+  z-index: 1 !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  min-height: 100% !important;
 }
 
-#tracking-reader__scan_region {
-  background: transparent !important;
+/* 扫描区域 */
+#qr-reader-container__scan_region,
+#qr-reader-container-mobile__scan_region,
+[id*="qr-reader-container"]__scan_region {
+  background: #000 !important;
+  position: absolute !important;
+  width: 100% !important;
+  height: 100% !important;
+  top: 0 !important;
+  left: 0 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
 }
 
-#tracking-reader__dashboard {
+/* 清除 html5-qrcode 生成的背景和边框 */
+#qr-reader-container__dashboard,
+#qr-reader-container-mobile__dashboard,
+[id*="qr-reader-container"]__dashboard {
+  display: none !important;
+}
+
+#qr-reader-container__stop_button,
+#qr-reader-container__torch_button,
+#qr-reader-container__camera_selection,
+#qr-reader-container__image_info,
+#qr-reader-container-mobile__stop_button,
+#qr-reader-container-mobile__torch_button,
+#qr-reader-container-mobile__camera_selection,
+#qr-reader-container-mobile__image_info,
+[id*="qr-reader-container"]__stop_button,
+[id*="qr-reader-container"]__torch_button {
+  display: none !important;
+}
+
+/* ── html5-qrcode v2.x 内部元素强制隐藏 ──────────────────── */
+#qr-scanner-container div[aria-label="Camera Selection"],
+#qr-scanner-container [id*="camera-selection"],
+#qr-scanner-container [class*="qr-selector"],
+#qr-scanner-container video+div,
+#qr-scanner-container video~* {
   display: none !important;
   visibility: hidden !important;
-  opacity: 0 !important;
-  height: 0 !important;
-  width: 0 !important;
-  overflow: hidden !important;
-  position: absolute !important;
-  pointer-events: none !important;
+}
+
+/* ── 扫描区域透明 ─────────────────────────────────────────── */
+#qr-scanner-container [style*="qrbox"] {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* ── 确保视频不被任何元素遮挡 ────────────────────────────── */
+video[style*="position: fixed"],
+video[style*="position: absolute"] {
+  z-index: 9999 !important;
+}
+
+/* ── 扫码库 qr-scanner-container 容器（备选 ID）──────────── */
+#qr-scanner-region {
+  width: 100% !important;
+  height: 100% !important;
 }

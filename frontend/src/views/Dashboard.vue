@@ -73,9 +73,9 @@ onMounted(loadStats)
 </script>
 
 <template>
-  <div class="h-full overflow-auto p-4 lg:p-6">
+  <div class="h-full overflow-auto p-3 sm:p-4 lg:p-6">
     <!-- 页面标题 -->
-    <div class="mb-6">
+    <div class="mb-4 md:mb-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 class="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">统计面板</h1>
@@ -132,7 +132,7 @@ onMounted(loadStats)
     <div v-else-if="stats">
 
       <!-- ════ 核心指标卡片 (PC: 4列 | 平板: 2列 | 手机: 2列) ════ -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 mb-6">
+      <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 lg:gap-5 mb-6">
 
         <!-- 总产品数 -->
         <div class="rounded-xl p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
@@ -211,7 +211,7 @@ onMounted(loadStats)
       </div>
 
       <!-- ════ 今日进出库 ════ -->
-      <div class="grid grid-cols-2 gap-4 lg:gap-5 mb-6">
+      <div class="grid grid-cols-2 gap-3 md:gap-4 lg:gap-5 mb-6">
         <div class="rounded-xl p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm flex items-center gap-4">
           <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
