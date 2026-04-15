@@ -84,8 +84,11 @@ function isActive(path) {
                      bg-gradient-to-br from-indigo-500 to-indigo-600
                      shadow-lg shadow-indigo-500/25"
             >
-              <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <svg class="w-5 h-5 shrink-0" viewBox="0 0 32 32" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 4L28 11V21L16 28L4 21V11L16 4Z"/>
+                <path d="M16 4V15"/>
+                <path d="M16 15L28 11"/>
+                <path d="M16 15L4 11"/>
               </svg>
             </div>
             <div class="min-w-0">

@@ -31,7 +31,6 @@ async function loadStats() {
     updateRefreshTime()
   } catch (e) {
     error.value = '无法加载统计数据，请检查后端服务'
-    console.error(e)
   } finally {
     loading.value = false
   }

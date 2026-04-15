@@ -66,15 +66,15 @@ const ToastItem = defineComponent({
   render() {
     return h('div', {
       class: [
-        'toast-item flex items-start gap-3 px-4 py-3 rounded-xl border shadow-xl shadow-black/40 backdrop-blur-sm',
+        'toast-item flex items-center gap-3 px-4 py-3 rounded-xl border shadow-xl shadow-black/40 backdrop-blur-sm',
         this.styleClass,
         this.visible ? 'toast-enter-active' : 'toast-leave-active'
       ]
     }, [
-      h('span', { class: this.iconColorClass, innerHTML: this.iconSvg }),
-      h('p', { class: 'flex-1 text-sm leading-relaxed break-words' }, this.toast.message),
+      h('span', { class: ['flex items-center justify-center', this.iconColorClass], innerHTML: this.iconSvg }),
+      h('p', { class: 'flex-1 text-sm leading-relaxed break-words self-center' }, this.toast.message),
       h('button', {
-        class: 'shrink-0 w-5 h-5 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity cursor-pointer -mt-0.5',
+        class: 'shrink-0 w-5 h-5 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity cursor-pointer',
         onClick: () => {
           this.visible = false
           setTimeout(() => this.$emit('remove', this.toast.id), 300)
@@ -102,8 +102,9 @@ function ensureContainer() {
     container.style.cssText = `
       position: fixed;
       top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
+      right: 20px;
+      left: auto;
+      transform: none;
       z-index: 9999;
       display: flex;
       flex-direction: column;
@@ -113,6 +114,9 @@ function ensureContainer() {
       max-width: 400px;
     `
     document.body.appendChild(container)
+
+    // 注入响应式样式
+    injectResponsiveStyles()
 
     toastApp = createApp({
       setup() {
@@ -146,6 +150,37 @@ function hide(id) {
   if (idx !== -1) toastList.splice(idx, 1)
 }
 
+function injectResponsiveStyles() {
+  if (document.getElementById('my-toast-responsive-styles')) return
+  const style = document.createElement('style')
+  style.id = 'my-toast-responsive-styles'
+  style.textContent = `
+    #my-toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      left: auto;
+      transform: none;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+      width: 90%;
+      max-width: 400px;
+    }
+    @media (max-width: 640px) {
+      #my-toast-container {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        top: 10px;
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
+
 function injectStyles() {
   if (document.getElementById('my-toast-styles')) return
   const style = document.createElement('style')
@@ -175,6 +210,7 @@ const MyMessage = {
 }
 
 injectStyles()
+injectResponsiveStyles()
 
 export default MyMessage
 

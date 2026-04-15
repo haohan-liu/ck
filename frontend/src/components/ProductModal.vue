@@ -43,14 +43,12 @@ const attrsArray = computed({
 // 获取单个属性值
 function getAttr(field) {
   const val = _attrs.value[field] || ''
-  console.log('[ProductModal] getAttr:', field, '=', val, '_attrs:', JSON.stringify(_attrs.value))
   return val
 }
 
 // 设置单个属性值
 function setAttr(field, value) {
   _attrs.value[field] = value
-  console.log('[ProductModal] setAttr:', field, '=', value)
 }
 
 // SKU 预览
@@ -134,7 +132,6 @@ async function updateSkuPreview() {
       skuPreview.value = res.data.data.sku_code;
     }
   } catch (e) {
-    console.error('生成SKU预览失败:', e);
     skuPreview.value = '';
   } finally {
     skuPreviewLoading.value = false;
@@ -152,7 +149,6 @@ let isInitializing = false
 watch(() => form.value.category_id, (newCatId) => {
   // 初始化时不执行清空
   if (isInitializing) {
-    console.log('[ProductModal] category_id watch: isInitializing=true, skip clearing')
     return
   }
   
@@ -172,24 +168,19 @@ watch(() => form.value.category_id, (newCatId) => {
 
 // 监听 visible 和 product 的组合变化
 watch([() => props.visible, () => props.product], async ([visible, product]) => {
-  console.log('[ProductModal] watch triggered', { visible, product })
   if (!visible) {
     loading.value = false
     return
   }
 
   loading.value = true
-  console.log('[ProductModal] loading started')
 
   try {
     // 先加载分类（如果没有的话）
     if (categories.value.length === 0) {
-      console.log('[ProductModal] loading categories...')
       try {
         await loadCategories()
-        console.log('[ProductModal] categories loaded:', categories.value.length, 'ids:', categories.value.map(c => c.id))
       } catch (catError) {
-        console.error('[ProductModal] loadCategories error:', catError)
         loading.value = false
         MyMessage.error('加载分类失败')
         return
@@ -197,7 +188,6 @@ watch([() => props.visible, () => props.product], async ([visible, product]) => 
     }
 
     if (product) {
-      console.log('[ProductModal] setting form for edit:', product)
       isInitializing = true
       form.value = {
         category_id: product.category_id || '',
@@ -211,7 +201,6 @@ watch([() => props.visible, () => props.product], async ([visible, product]) => 
       Object.keys(_attrs.value).forEach(key => delete _attrs.value[key])
       Object.assign(_attrs.value, product.attributes || {})
       skuPreview.value = product.sku_code || ''
-      console.log('[ProductModal] form.category_id set to:', form.value.category_id, '_attrs:', JSON.stringify(_attrs.value))
     } else {
       isInitializing = true
       form.value = { category_id: '', remark: '', location_code: '', current_stock: 0, min_stock: 0, unit: '件', cost_price: 0 }
@@ -220,21 +209,12 @@ watch([() => props.visible, () => props.product], async ([visible, product]) => 
     }
     formError.value = ''
     
-    // 调试：检查 currentSchema
-    console.log('[ProductModal] DEBUG: before nextTick - form.category_id:', form.value.category_id, 'type:', typeof form.value.category_id, 'currentSchema:', currentSchema.value)
-    console.log('[ProductModal] DEBUG: categories:', categories.value.filter(c => c.id === 7))
-    
     await nextTick()
     
     // 在 nextTick 之后再解锁，防止异步 watcher
     isInitializing = false
-    console.log('[ProductModal] DEBUG: isInitializing set to false')
-    
-    // 再次检查
-    console.log('[ProductModal] DEBUG: after nextTick - form.category_id:', form.value.category_id, 'currentSchema:', currentSchema.value)
     
     loading.value = false
-    console.log('[ProductModal] done - form.category_id:', form.value.category_id, 'currentSchema:', currentSchema.value, 'categoryOptions:', categoryOptions.value.map(o => o.value))
   } catch (error) {
     console.error('[ProductModal] load error:', error)
     loading.value = false

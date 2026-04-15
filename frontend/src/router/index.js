@@ -44,4 +44,8 @@ const router = createRouter({
   routes,
 })
 
+router.afterEach(() => {
+  document.title = '档把库存系统'
+})
+
 export default router
