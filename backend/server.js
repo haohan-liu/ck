@@ -4,7 +4,7 @@ const path = require('path');
 const { initDatabase } = require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002; //默认使用服务器3002端口，不和其他端口冲突
 
 const defaultOrigins = [
     'http://localhost:5173',
