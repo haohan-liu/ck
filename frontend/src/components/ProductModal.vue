@@ -102,8 +102,7 @@ const autoName = computed(() => {
 
 // 生成 SKU 预览（调用后端实时翻译）
 async function updateSkuPreview() {
-  // 新增模式下才需要自动生成SKU，编辑模式保持原SKU不变
-  if (!form.value.category_id || mode.value === 'edit') {
+  if (!form.value.category_id) {
     return;
   }
 
@@ -419,15 +418,7 @@ function submit() {
             </div>
             <div>
               <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">成本单价 (元)</label>
-              <div
-                class="px-4 py-2.5 rounded-xl text-sm text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 focus:outline-none transition-all cursor-not-allowed"
-                :title="form.category_id ? '此价格继承自所选的产品大类，请在「产品大类管理」中修改' : '请先选择一个产品大类'"
-              >
-                <span v-if="form.cost_price && form.cost_price > 0">
-                  <span class="text-slate-400 dark:text-slate-500">￥</span><span class="text-slate-500 dark:text-slate-400 font-medium">{{ Number(form.cost_price).toFixed(2) }}</span>
-                </span>
-                <span v-else class="text-slate-400 dark:text-slate-500">选择大类后自动填充</span>
-              </div>
+              <input v-model.number="form.cost_price" type="number" min="0" step="0.01" placeholder="选择大类后自动填充" class="w-full py-2.5 px-3.5 rounded-xl text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 focus:outline-none transition-all placeholder-slate-400" />
             </div>
           </div>
 

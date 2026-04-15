@@ -109,16 +109,20 @@ const isMobile = computed(() => {
         <template v-else>
           <!-- 全屏遮罩 -->
           <div
-            class="absolute inset-0 bg-black/60"
+            class="absolute inset-0 bg-black/60 backdrop-blur-sm"
             @click="onBackdropClick"
           ></div>
-          <!-- 抽屉主体 -->
+          <!-- 抽屉主体：flex-col 垂直布局，底部留白 -->
           <div
-            class="absolute bottom-0 left-0 right-0 rounded-t-2xl scale-in"
+            class="mobile-drawer absolute left-0 right-0 flex flex-col rounded-t-2xl"
             style="
+              bottom: 0;
+              margin-left: max(0.5rem, env(safe-area-inset-left));
+              margin-right: max(0.5rem, env(safe-area-inset-right));
+              margin-bottom: max(0.5rem, env(safe-area-inset-bottom));
               background-color: var(--modal-bg);
               box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
-              max-height: 85vh;
+              max-height: 85dvh;
               z-index: 2;
             "
           >
@@ -129,7 +133,7 @@ const isMobile = computed(() => {
 
             <!-- 标题栏 -->
             <div
-              class="flex items-center justify-between px-4 py-3"
+              class="flex items-center justify-between px-4 py-3 flex-shrink-0"
               style="border-bottom: 1px solid var(--modal-border);"
             >
               <div class="flex items-center gap-2">
@@ -148,15 +152,15 @@ const isMobile = computed(() => {
               </button>
             </div>
 
-            <!-- 内容区 -->
-            <div class="px-4 py-4 overflow-y-auto" style="max-height: calc(85vh - 120px); font-size: 13px;">
+            <!-- 内容区：flex-1 自适应剩余高度，overflow-y-auto 独立滚动 -->
+            <div class="flex-1 overflow-y-auto px-4 py-4" style="font-size: 13px; max-height: calc(85dvh - 100px);">
               <slot />
             </div>
 
-            <!-- 底部按钮 -->
+            <!-- 底部按钮区：flex-shrink-0 固定在底部，safe-area 适配 -->
             <div
               v-if="showFooter"
-              class="px-4 py-4 flex items-center justify-end gap-2"
+              class="px-4 py-4 flex items-center justify-end gap-2 flex-shrink-0"
               style="border-top: 1px solid var(--modal-border); padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));"
             >
               <slot name="footer">
@@ -183,10 +187,17 @@ const isMobile = computed(() => {
 .modal-enter-active { transition: opacity 0.2s ease; }
 .modal-leave-active { transition: opacity 0.15s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
+/* PC端动画 - 居中弹窗 */
 .modal-enter-active .relative { transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease; }
 .modal-leave-active .relative { transition: transform 0.15s ease-in, opacity 0.15s ease; }
 .modal-enter-from .relative { transform: scale(0.92) translateY(12px); opacity: 0; }
 .modal-leave-to .relative { transform: scale(0.95) translateY(8px); opacity: 0; }
+/* 移动端动画 - 底部抽屉 */
+.modal-enter-active .mobile-drawer { transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+.modal-leave-active .mobile-drawer { transition: transform 0.2s ease-in; }
+.modal-enter-from .mobile-drawer { transform: translateY(100%); }
+.modal-leave-to .mobile-drawer { transform: translateY(100%); }
+
 .scale-in { animation: scale-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 @keyframes scale-in { 0% { opacity: 0; transform: scale(0.94); } 100% { opacity: 1; transform: scale(1); } }
 </style>

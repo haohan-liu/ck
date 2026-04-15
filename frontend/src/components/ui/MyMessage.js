@@ -102,14 +102,15 @@ function ensureContainer() {
     container.style.cssText = `
       position: fixed;
       top: 20px;
-      right: 20px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 9999;
       display: flex;
       flex-direction: column;
       gap: 10px;
       pointer-events: none;
-      max-width: 360px;
-      width: 100%;
+      width: 90%;
+      max-width: 400px;
     `
     document.body.appendChild(container)
 

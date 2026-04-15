@@ -66,7 +66,7 @@ function urgencyLabel(p) {
 }
 
 function formatCurrency(val) {
-  return Number(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return Number(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
 onMounted(loadStats)
@@ -157,7 +157,7 @@ onMounted(loadStats)
             <div class="min-w-0">
               <p class="text-[10px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-tight">总产品数</p>
               <p class="text-xl sm:text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mt-1 sm:mt-2 leading-tight">{{ stats.totalProducts }}</p>
-              <p class="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 mt-1 sm:mt-2">件商品</p>
+              <p class="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 mt-1 sm:mt-2">个</p>
             </div>
             <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -189,6 +189,7 @@ onMounted(loadStats)
             <div class="min-w-0 flex-1">
               <p class="text-[10px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-tight">库存总价值</p>
               <p class="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white mt-1 sm:mt-2 leading-tight truncate">¥{{ formatCurrency(stats.totalValue) }}</p>
+              <p class="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 mt-1 sm:mt-2">元</p>
             </div>
             <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-sky-500/10 flex items-center justify-center shrink-0">
               <span class="text-sky-500 font-bold" style="font-size: 18px; font-family: Arial, sans-serif;">¥</span>
@@ -266,7 +267,7 @@ onMounted(loadStats)
           <h3 class="text-base font-semibold text-slate-900 dark:text-white">低库存预警</h3>
           <span
             v-if="stats.lowStockList && stats.lowStockList.length > 0"
-            class="px-2.5 py-0.5 rounded-full text-xs font-bold text-white"
+            class="ml-auto px-2.5 py-0.5 rounded-full text-xs font-bold text-white"
             style="background: linear-gradient(135deg, #f43f5e, #e11d48);"
           >{{ stats.lowStockList.length }} 件</span>
           <span v-else class="px-2.5 py-0.5 rounded-full text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">

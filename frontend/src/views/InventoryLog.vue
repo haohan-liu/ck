@@ -1126,14 +1126,87 @@ onMounted(loadLogs)
         </div>
       </div>
 
-      <!-- 分页器（确保移动端和PC端都不产生横向滚动条） -->
+      <!-- 分页器（手机一行显示，PC三列布局） -->
       <div
         v-if="!loading && logs.length > 0"
         class="mt-4 md:mt-5 flex flex-col sm:flex-row items-center justify-between gap-3 md:gap-4"
         style="min-height: 0;"
       >
-        <!-- 左侧：总数 + 每页条数（不用 overflow-hidden，避免下拉与圆角被裁切） -->
-        <div class="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 shrink-0">
+        <!-- 手机端一行：左右分散布局 -->
+        <div class="flex sm:hidden items-center justify-between w-full text-xs text-slate-500 dark:text-slate-400 px-1">
+          <!-- 左侧：总数 -->
+          <span>共 <span class="font-medium text-slate-700 dark:text-slate-200">{{ total }}</span> 条</span>
+
+          <!-- 中间：页码按钮组 -->
+          <div class="flex items-center gap-1">
+            <button
+              @click="prevPage"
+              :disabled="currentPage === 1"
+              class="flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 19-7-7 7-7"/>
+              </svg>
+            </button>
+            <span class="min-w-[3rem] text-center font-medium text-slate-700 dark:text-slate-200">{{ currentPage }}/{{ totalPages }}</span>
+            <button
+              @click="nextPage"
+              :disabled="currentPage === totalPages || totalPages === 0"
+              class="flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- 右侧：每页条数 -->
+          <div ref="pageSizeRootRef" class="relative">
+            <button
+              type="button"
+              class="page-size-trigger flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 px-2 py-1 text-xs font-medium tabular-nums transition-all duration-200 cursor-pointer"
+              :style="pageSizeOpen
+                ? 'border-color: var(--filter-accent); color: var(--filter-accent);'
+                : 'color: var(--text-secondary);'"
+              @click="togglePageSizeOpen"
+            >
+              {{ pageSize }}
+              <svg class="h-3 w-3 shrink-0 transition-transform duration-200" :class="pageSizeOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 9-7 7-7-7"/>
+              </svg>
+            </button>
+            <Transition
+              enter-active-class="transition duration-150 ease-out"
+              enter-from-class="opacity-0 translate-y-1"
+              enter-to-class="opacity-100 translate-y-0"
+              leave-active-class="transition duration-100 ease-in"
+              leave-from-class="opacity-100 translate-y-0"
+              leave-to-class="opacity-0 translate-y-1"
+            >
+              <div
+                v-if="pageSizeOpen"
+                class="page-size-panel absolute z-[60] mb-2 right-0 min-w-[4.5rem] overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--modal-bg)] py-1 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
+                style="bottom: 100%;"
+              >
+                <button
+                  v-for="n in pageSizeOptions"
+                  :key="n"
+                  type="button"
+                  class="flex w-full items-center justify-center px-3 py-2 text-xs transition-colors duration-100 cursor-pointer"
+                  :class="pageSize === n
+                    ? 'bg-[var(--filter-bg)] font-medium text-[var(--filter-accent)]'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]'"
+                  @click="pickPageSize(n)"
+                >
+                  {{ n }}
+                </button>
+              </div>
+            </Transition>
+          </div>
+        </div>
+
+        <!-- PC端：左侧总数 + 每页条数 -->
+        <div class="hidden sm:flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 shrink-0">
           <span class="whitespace-nowrap">共 <span class="font-semibold text-slate-700 dark:text-slate-200">{{ total }}</span> 条</span>
           <div class="flex items-center gap-2">
             <span class="whitespace-nowrap">每页</span>
@@ -1198,8 +1271,8 @@ onMounted(loadLogs)
           </div>
         </div>
 
-        <!-- 中间：页码按钮（自适应收缩，不超出容器） -->
-        <div class="flex items-center justify-center gap-0.5 overflow-x-auto scroll-touch max-w-full">
+        <!-- PC端：中间页码按钮 -->
+        <div class="hidden sm:flex items-center justify-center gap-1 sm:gap-1.5 overflow-x-auto scroll-touch max-w-full">
           <!-- 上一页 -->
           <button
             @click="prevPage"
@@ -1215,6 +1288,11 @@ onMounted(loadLogs)
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 19-7-7 7-7"/>
             </svg>
           </button>
+
+          <!-- 页码信息 -->
+          <span class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap px-1">
+            第 <span class="font-medium text-slate-700 dark:text-slate-200">{{ currentPage }}</span> / {{ totalPages }} 页
+          </span>
 
           <!-- 下一页 -->
           <button
@@ -1233,8 +1311,8 @@ onMounted(loadLogs)
           </button>
         </div>
 
-        <!-- 右侧：跳转 -->
-        <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 shrink-0">
+        <!-- PC端：右侧跳转 -->
+        <div class="hidden sm:flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 shrink-0">
           <label class="whitespace-nowrap">第</label>
           <input
             type="number"
@@ -1253,39 +1331,40 @@ onMounted(loadLogs)
       </div>
 
       <!-- 导出确认弹窗 -->
-      <MyModal
-        v-model="showExportModal"
-        title="确认导出"
-        width="max-w-md"
-      >
-        <template #icon>
-          <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center">
-            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0-3-3m3 3 3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-            </svg>
+      <Transition name="modal-fade">
+        <div v-if="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showExportModal = false"></div>
+          <div
+            class="relative w-full max-w-sm rounded-2xl overflow-hidden scale-in
+                   bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl"
+          >
+            <div class="p-6">
+              <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center shrink-0">
+                  <svg class="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0-3-3m3 3 3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <h3 class="text-base font-bold text-slate-900 dark:text-white">确认导出</h3>
+                  <p class="text-sm text-slate-500 dark:text-slate-400 mt-1.5">
+                    确定要导出所有操作日志吗？<br/>
+                    <span class="text-xs text-slate-400 dark:text-slate-500">导出的数据将包含当前筛选条件下的所有记录。</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="px-6 pb-6 flex items-center gap-3 pb-safe">
+              <button @click="showExportModal = false" class="flex-1 py-2.5 text-sm font-medium rounded-xl bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer">
+                取消
+              </button>
+              <button @click="confirmExport" class="flex-1 py-2.5 text-sm font-semibold rounded-xl text-white bg-gradient-to-r from-indigo-500 to-indigo-600 shadow-md shadow-indigo-500/20 hover:from-indigo-600 hover:to-indigo-700 active:scale-95 transition-all cursor-pointer">
+                确认导出
+              </button>
+            </div>
           </div>
-        </template>
-        <div class="text-sm text-[var(--text-secondary)] leading-relaxed">
-          <p>确定要导出所有操作日志吗？</p>
-          <p class="mt-2 text-[var(--text-muted)]">导出的数据将包含当前筛选条件下的所有记录。</p>
         </div>
-        <template #footer>
-          <button
-            @click="showExportModal = false"
-            class="px-4 py-2.5 text-sm font-medium rounded-xl border cursor-pointer active:scale-95 transition-all"
-            style="background-color: var(--bg-tertiary); color: var(--text-secondary); border-color: var(--border-default);"
-          >
-            取消
-          </button>
-          <button
-            @click="confirmExport"
-            class="px-5 py-2.5 text-sm font-bold text-white rounded-xl border border-transparent active:scale-95 transition-all cursor-pointer"
-            style="background: var(--accent);"
-          >
-            确认导出
-          </button>
-        </template>
-      </MyModal>
+      </Transition>
 
       <!-- 删除确认弹窗 -->
       <MyModal

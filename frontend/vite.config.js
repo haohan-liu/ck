@@ -22,7 +22,6 @@ export default defineConfig({
     // 1. 允许通过局域网 IP 访问（手机访问必备）
     host: true, 
     // 2. 允许特定的域名访问（解决 Cloudflare Tunnel 的报错）
-    // 这里建议设置为 true（允许所有）或者 '.trycloudflare.com'（允许所有隧道子域名）
     allowedHosts: ['.trycloudflare.com'], 
     proxy: {
       '/api': {

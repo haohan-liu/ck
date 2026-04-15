@@ -12,7 +12,6 @@ const toggleTheme = () => {
 }
 watch(isDark, (val) => {
   const theme = val ? 'dark' : 'light'
-  // 关键：同时设置 html 和 body 上的 data-theme，确保 CSS 变量系统正确响应
   document.documentElement.setAttribute('data-theme', theme)
   document.body.setAttribute('data-theme', theme)
   localStorage.setItem('theme', theme)
@@ -24,7 +23,7 @@ const drawerOpen = ref(false)
 function openDrawer()  { drawerOpen.value = true }
 function closeDrawer() { drawerOpen.value = false }
 
-// ======================== 导航项定义（Lucide SVG 内联） ========================
+// ======================== 导航项定义 ========================
 const navItems = [
   {
     name: '统计面板',
@@ -64,18 +63,11 @@ function isActive(path) {
 </script>
 
 <template>
-  <!-- 全屏背景层 -->
   <div
-    class="h-[100dvh] w-full overflow-hidden flex"
+    class="fixed inset-0 w-full h-full overflow-hidden flex flex-row bg-slate-50 dark:bg-slate-950"
     :data-theme="isDark ? 'dark' : 'light'"
   >
-    <!-- ═══════════════════════════════════════════════════════════════ -->
-    <!-- PC 端 — 悬浮式卡片布局 (≥1024px)                         -->
-    <!-- 彻底放弃贴边侧边栏，使用 m-4 悬浮卡片结构               -->
-    <!-- ═══════════════════════════════════════════════════════════════ -->
     <div class="hidden lg:flex w-full h-full p-4 gap-4">
-
-      <!-- 侧边栏 — 悬浮卡片，四周留白 m-0 (因为外层 p-4)，独立 rounded-2xl -->
       <aside
         class="w-60 h-full flex flex-col shrink-0
                rounded-2xl overflow-hidden
@@ -85,7 +77,6 @@ function isActive(path) {
                shadow-[0_8px_30px_rgb(0,0,0,0.04)]
                dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]"
       >
-        <!-- Logo -->
         <div class="px-6 py-6 border-b border-slate-100 dark:border-white/5 flex-shrink-0">
           <div class="flex items-center gap-3">
             <div
@@ -106,7 +97,6 @@ function isActive(path) {
           </div>
         </div>
 
-        <!-- 导航 -->
         <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           <router-link
             v-for="item in navItems"
@@ -119,7 +109,6 @@ function isActive(path) {
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
             "
           >
-            <!-- 激活左侧小指示块 -->
             <span
               v-if="isActive(item.path)"
               class="absolute right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/60"
@@ -133,11 +122,9 @@ function isActive(path) {
           </router-link>
         </nav>
 
-        <!-- 底部：主题切换 + 版权 -->
         <div class="px-3 pb-5 pt-2 space-y-1 flex-shrink-0">
           <div class="h-px bg-slate-100 dark:bg-white/5 mx-1 mb-3"></div>
 
-          <!-- 主题切换 -->
           <button
             @click="toggleTheme"
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm
@@ -146,7 +133,6 @@ function isActive(path) {
                    hover:text-slate-900 dark:hover:text-white
                    transition-all duration-200 cursor-pointer"
           >
-            <!-- 太阳（暗→亮） -->
             <svg v-if="isDark"
               xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -158,14 +144,12 @@ function isActive(path) {
               <path d="m6.34 17.66-1.41 1.41"/>
               <path d="m19.07 4.93-1.41 1.41"/>
             </svg>
-            <!-- 月亮（亮→暗） -->
             <svg v-else
               xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
             </svg>
             <span class="flex-1 text-left">{{ isDark ? '亮色模式' : '暗色模式' }}</span>
-            <!-- 滑块 -->
             <div class="w-9 h-5 rounded-full p-0.5 bg-slate-200 dark:bg-indigo-900/50 transition-all duration-300">
               <div
                 class="w-4 h-4 rounded-full bg-white dark:bg-indigo-400 shadow-sm transition-all duration-300"
@@ -180,31 +164,24 @@ function isActive(path) {
         </div>
       </aside>
 
-    <!-- 主内容区 — 悬浮卡片 -->
-    <main class="flex-1 min-w-0 h-full rounded-2xl overflow-hidden
-                 bg-white/70 dark:bg-slate-900/50
-                 backdrop-blur-xl
-                 border border-slate-200/50 dark:border-white/5
-                 shadow-[0_8px_30px_rgb(0,0,0,0.04)]
-                 dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
-      <div class="h-full overflow-auto p-3 md:p-4 lg:p-6">
-        <router-view />
-      </div>
-    </main>
+      <main class="flex-1 min-w-0 h-full rounded-2xl overflow-hidden
+                   bg-white/70 dark:bg-slate-900/50
+                   backdrop-blur-xl
+                   border border-slate-200/50 dark:border-white/5
+                   shadow-[0_8px_30px_rgb(0,0,0,0.04)]
+                   dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)]">
+        <div class="h-full overflow-auto p-3 md:p-4 lg:p-6">
+          <router-view />
+        </div>
+      </main>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════ -->
-    <!-- 移动端布局 (<1024px) — 顶部栏 + 底部 Tab + 主内容       -->
-    <!-- ═══════════════════════════════════════════════════════════════ -->
-    <div class="flex flex-col flex-1 min-w-0 lg:hidden h-full overflow-hidden">
+    <div class="flex lg:hidden w-full h-full relative">
 
-      <!-- 顶部栏 -->
       <header
-        class="flex-shrink-0 flex items-center justify-between h-14 px-4
-               bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
-               border-b border-slate-100 dark:border-white/5"
+        class="absolute top-0 left-0 right-0 h-[56px] z-50 flex items-center justify-between px-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-100 dark:border-white/5"
+        @touchmove.prevent
       >
-        <!-- Logo -->
         <div class="flex items-center gap-2.5">
           <div
             class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0
@@ -218,7 +195,6 @@ function isActive(path) {
           <span class="text-sm font-bold text-slate-900 dark:text-white">档把库存</span>
         </div>
 
-        <!-- 操作按钮 -->
         <div class="flex items-center gap-1">
           <button
             @click="toggleTheme"
@@ -227,22 +203,8 @@ function isActive(path) {
                    hover:bg-slate-100 dark:hover:bg-white/5
                    transition-all duration-200 cursor-pointer active:scale-95"
           >
-            <svg v-if="isDark"
-              xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="4"/>
-              <path d="M12 2v2"/><path d="M12 20v2"/>
-              <path d="m4.93 4.93 1.41 1.41"/>
-              <path d="m17.66 17.66 1.41 1.41"/>
-              <path d="M2 12h2"/><path d="M20 12h2"/>
-              <path d="m6.34 17.66-1.41 1.41"/>
-              <path d="m19.07 4.93-1.41 1.41"/>
-            </svg>
-            <svg v-else
-              xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-            </svg>
+            <svg v-if="isDark" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
           </button>
           <button
             @click="openDrawer"
@@ -251,71 +213,49 @@ function isActive(path) {
                    hover:bg-slate-100 dark:hover:bg-white/5
                    transition-all duration-200 cursor-pointer active:scale-95"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" x2="20" y1="12" y2="12"/>
-              <line x1="4" x2="20" y1="6" y2="6"/>
-              <line x1="4" x2="20" y1="18" y2="18"/>
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
           </button>
         </div>
       </header>
 
-      <!-- 主内容 -->
-      <main class="flex-1 overflow-auto" style="padding-bottom: calc(env(safe-area-inset-bottom) + 64px);">
+      <main
+        class="absolute left-0 right-0 overflow-y-auto overscroll-none flex flex-col"
+        style="top: 56px; bottom: calc(56px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch;"
+      >
         <router-view />
       </main>
 
-      <!-- 底部 Tab -->
       <nav
-        class="flex-shrink-0 flex items-stretch
-               bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
-               border-t border-slate-100 dark:border-white/5
-               pb-safe"
-        style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;"
+        class="absolute bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-100 dark:border-white/5 flex items-stretch"
+        style="padding-bottom: env(safe-area-inset-bottom); height: calc(56px + env(safe-area-inset-bottom));"
+        @touchmove.prevent
       >
         <router-link
           v-for="item in navItems"
           :key="item.path"
           :to="item.path"
-          class="relative flex-1 flex flex-col items-center justify-center py-2 gap-0.5
-                 text-[10px] transition-all duration-200 cursor-pointer select-none"
-          :class="
-            isActive(item.path)
-              ? 'text-indigo-600 dark:text-indigo-400'
-              : 'text-slate-400 dark:text-slate-500'
-          "
+          class="relative flex-1 flex flex-col items-center justify-center h-[56px] gap-0.5 text-[10px] transition-all duration-200 cursor-pointer select-none"
+          :class="isActive(item.path) ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500'"
         >
-          <div
-            v-if="isActive(item.path)"
-            class="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-b-full"
-            style="background: linear-gradient(90deg, #6366f1, #818cf8);"
-          ></div>
+          <div v-if="isActive(item.path)" class="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-b-full" style="background: linear-gradient(90deg, #6366f1, #818cf8);"></div>
           <span class="transition-transform duration-150 w-5 h-5" :class="isActive(item.path) ? 'scale-110' : ''" v-html="item.icon"></span>
           <span class="font-medium leading-none">{{ item.name }}</span>
         </router-link>
       </nav>
+
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════ -->
-    <!-- 移动端抽屉 — 右侧滑出，悬浮风格                        -->
-    <!-- ═══════════════════════════════════════════════════════════════ -->
     <Transition name="drawer-slide">
-      <div v-if="drawerOpen" class="fixed inset-0 z-50 lg:hidden">
-        <!-- 遮罩 -->
+      <div v-if="drawerOpen" class="fixed inset-0 z-[100] lg:hidden">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm touch-none" @click="closeDrawer" @touchmove.prevent></div>
         <div
-          class="absolute inset-0 bg-black/40 backdrop-blur-sm"
-          @click="closeDrawer"
-        ></div>
-        <!-- 面板 -->
-        <div
-          class="absolute right-0 top-0 h-full w-[280px]
+          class="absolute right-0 top-0 h-full w-[280px] flex flex-col
                  rounded-l-2xl overflow-hidden
                  bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl
                  border-l border-slate-200/50 dark:border-white/5
                  shadow-[-12px_0_60px_rgba(0,0,0,0.15)]"
         >
-          <div class="px-5 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+          <div class="px-5 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between touch-none" @touchmove.prevent>
             <div class="flex items-center gap-3">
               <div class="w-8 h-8 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-md">
                 <svg class="w-[13px] h-[13px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -324,35 +264,23 @@ function isActive(path) {
               </div>
               <span class="text-sm font-bold text-slate-900 dark:text-white">导航菜单</span>
             </div>
-            <button
-              @click="closeDrawer"
-              class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-              </svg>
+            <button @click="closeDrawer" class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
 
-          <nav class="px-3 py-4 space-y-1 overflow-y-auto">
+          <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto overscroll-none">
             <router-link
-              v-for="item in navItems"
-              :key="item.path"
-              :to="item.path"
-              @click="closeDrawer"
+              v-for="item in navItems" :key="item.path" :to="item.path" @click="closeDrawer"
               class="group flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all duration-200"
-              :class="
-                isActive(item.path)
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 font-semibold'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
-              "
+              :class="isActive(item.path) ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'"
             >
               <span class="shrink-0" v-html="item.icon"></span>
               {{ item.name }}
             </router-link>
           </nav>
 
-          <div class="px-5 py-5 border-t border-slate-100 dark:border-white/5 space-y-2">
+          <div class="px-5 py-5 border-t border-slate-100 dark:border-white/5 space-y-2 touch-none" @touchmove.prevent>
             <button
               @click="toggleTheme(); closeDrawer()"
               class="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm
@@ -361,20 +289,8 @@ function isActive(path) {
                      hover:text-slate-900 dark:hover:text-white
                      transition-all duration-200 cursor-pointer"
             >
-              <svg v-if="isDark"
-                xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="4"/>
-                <path d="M12 2v2"/><path d="M12 20v2"/>
-                <path d="m4.93 4.93 1.41 1.41"/>
-                <path d="m17.66 17.66 1.41 1.41"/>
-                <path d="M2 12h2"/><path d="M20 12h2"/>
-                <path d="m6.34 17.66-1.41 1.41"/>
-                <path d="m19.07 4.93-1.41 1.41"/>
-              </svg>
-              <svg v-else
-                xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-              </svg>
+              <svg v-if="isDark" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
               {{ isDark ? '亮色模式' : '暗色模式' }}
             </button>
             <div class="pt-2 text-center text-xs text-slate-400 dark:text-slate-500">
@@ -388,10 +304,6 @@ function isActive(path) {
 </template>
 
 <style scoped>
-.pb-safe {
-  padding-bottom: max(6px, env(safe-area-inset-bottom));
-}
-
 .drawer-slide-enter-active,
 .drawer-slide-leave-active {
   transition: opacity 0.25s ease;
@@ -409,5 +321,24 @@ function isActive(path) {
 }
 .drawer-slide-leave-to > div:last-child {
   transform: translateX(100%);
+}
+</style>
+
+<style>
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* 杜绝一切横向或纵向的原生页面弹性越界 */
+  overflow: hidden !important;
+  overscroll-behavior-y: none !important;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
 }
 </style>
