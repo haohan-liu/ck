@@ -36,3 +36,13 @@ export const getInventoryLogs = getLogs
 export function deleteLogs(data) {
   return api.delete('/inventory/logs', { data })
 }
+
+// 更新日志备注
+export function updateLogNote(id, note) {
+  return api.put(`/inventory/logs/${id}/note`, { note })
+}
+
+// 批量绑定国内单号（集包功能）
+export function updateBatchDomesticTracking(ids, domesticTracking) {
+  return api.put('/inventory/logs/batch-domestic-tracking', { ids, domestic_tracking: domesticTracking })
+}

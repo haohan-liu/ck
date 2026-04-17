@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
 
   const totalProducts = getAll('SELECT COUNT(*) as count FROM products')[0]?.count || 0;
   const stockStats = getAll('SELECT SUM(current_stock) as total, SUM(current_stock * cost_price) as value FROM products')[0] || {};
-  const lowStockProducts = getAll('SELECT COUNT(*) as count FROM products WHERE current_stock < min_stock AND current_stock > 0')[0]?.count || 0;
+  const lowStockProducts = getAll('SELECT COUNT(*) as count FROM products WHERE current_stock <= min_stock AND current_stock > 0')[0]?.count || 0;
   const zeroStockProducts = getAll('SELECT COUNT(*) as count FROM products WHERE current_stock = 0')[0]?.count || 0;
 
   const todayIn = getAll(
@@ -37,7 +37,7 @@ router.get('/', (req, res) => {
     FROM categories c
     LEFT JOIN products p ON c.id = p.category_id
     GROUP BY c.id, c.name
-    ORDER BY c.id
+    ORDER BY c.sort_order ASC, c.id ASC
   `);
 
   // 30天出库排行榜
@@ -55,12 +55,12 @@ router.get('/', (req, res) => {
     LIMIT 20
   `);
 
-  // 低库存预警产品列表（< min_stock，不包括等于的情况）
+  // 低库存预警产品列表（<= min_stock，包括等于的情况）
   const lowStockList = getAll(`
     SELECT p.*, c.name as category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.current_stock < p.min_stock
+    WHERE p.current_stock <= p.min_stock
     ORDER BY p.current_stock ASC, p.id ASC
     LIMIT 50
   `);
@@ -87,7 +87,7 @@ router.get('/low-stock', (req, res) => {
     SELECT p.*, c.name as category_name
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.current_stock < p.min_stock
+    WHERE p.current_stock <= p.min_stock
     ORDER BY p.current_stock ASC, p.id ASC
   `);
   res.json({ success: true, data: products.map(formatProduct) });

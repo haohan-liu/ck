@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import { BrowserMultiFormatReader } from '@zxing/library'
 import { stockIn, stockOut, stockAdjust } from '../api/inventory.js'
 import MyMessage from './ui/MyMessage.js'
 
@@ -19,6 +20,12 @@ const trackingNumber = ref('')
 const submitting = ref(false)
 const formError = ref('')
 const successMsg = ref('')
+
+// 扫码功能状态
+const showScanner = ref(false)
+const scannerVideo = ref(null)
+const scannerError = ref('')
+let codeReader = null
 
 const MODE_CONFIG = {
   in: {
@@ -113,6 +120,70 @@ watch(() => props.visible, (val) => {
 
 function clearDebounce() {
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null }
+}
+
+async function startScanner() {
+  scannerError.value = ''
+  showScanner.value = true
+
+  await nextTick()
+
+  const videoEl = scannerVideo.value
+  if (!videoEl) {
+    scannerError.value = '扫码组件初始化失败'
+    showScanner.value = false
+    return
+  }
+
+  videoEl.setAttribute('playsinline', 'true')
+  videoEl.setAttribute('webkit-playsinline', 'true')
+  videoEl.muted = true
+
+  try {
+    codeReader = new BrowserMultiFormatReader()
+    await codeReader.decodeFromConstraints(
+      {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          focusMode: 'continuous'
+        }
+      },
+      videoEl,
+      (result, err) => {
+        if (result) {
+          trackingNumber.value = result.getText()
+          stopScanner()
+          MyMessage.success('扫码成功：' + trackingNumber.value)
+        }
+      }
+    )
+  } catch (e) {
+    const name = e?.name || 'Error'
+    if (name === 'NotAllowedError') {
+      scannerError.value = '摄像头权限被拒绝'
+    } else if (name === 'NotFoundError') {
+      scannerError.value = '未检测到摄像头'
+    } else {
+      scannerError.value = '扫码失败: ' + (e.message || name)
+    }
+    showScanner.value = false
+  }
+}
+
+function stopScanner() {
+  showScanner.value = false
+  if (codeReader) {
+    try { codeReader.reset() } catch(e) {}
+    codeReader = null
+  }
+  const videoEl = scannerVideo.value
+  if (videoEl && videoEl.srcObject) {
+    const tracks = videoEl.srcObject.getTracks()
+    tracks.forEach(track => track.stop())
+    videoEl.srcObject = null
+  }
 }
 
 function validate() {
@@ -227,7 +298,7 @@ async function submit() {
         </div>
 
         <!-- 内容区 -->
-        <div class="px-6 py-5 space-y-5">
+        <div class="px-6 py-5 space-y-5 overflow-y-auto max-h-[calc(100vh-200px)]">
 
           <!-- 库存预览卡片 -->
           <div class="rounded-xl p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5">
@@ -282,30 +353,45 @@ async function submit() {
               </svg>
               {{ outOverWarning }}
             </p>
-            <p v-if="mode === 'adjust' && quantity !== '' && quantity !== null" class="text-xs mt-1.5" style="color: var(--warning);">{{ adjustPreview }}</p>
           </div>
 
-          <!-- 运单号（仅出库） -->
+          <!-- 运单号（仅出库模式） -->
           <Transition name="field-expand">
-            <div v-if="mode === 'out'">
-              <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                运单号
-                <span class="text-xs font-normal text-slate-400 dark:text-slate-500 ml-1">选填，绑定后可在日志中追溯</span>
+            <div v-if="mode === 'out'" class="space-y-2">
+              <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                运单号 <span class="text-rose-500">*</span>
               </label>
               <div class="relative">
-                <div class="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <div class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
+                    <rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>
                   </svg>
                 </div>
                 <input
                   v-model="trackingNumber"
                   type="text"
                   placeholder="请输入或扫码运单号"
-                  class="w-full pl-11 pr-4 py-3 rounded-xl text-sm text-slate-900 dark:text-white
+                  class="w-full pl-11 pr-12 py-3 rounded-xl text-sm text-slate-900 dark:text-white
                          bg-slate-50 dark:bg-slate-800 border-2 border-transparent
                          placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-all"
                 />
+                <button
+                  v-if="mode === 'out'"
+                  @click="startScanner"
+                  type="button"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-lg text-slate-500 hover:text-indigo-600 transition-all cursor-pointer"
+                  title="扫码"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+                    <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                    <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                    <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                    <line x1="8" x2="8" y1="12" y2="12"/>
+                    <line x1="12" x2="12" y1="12" y2="12"/>
+                    <line x1="16" x2="16" y1="12" y2="12"/>
+                  </svg>
+                </button>
               </div>
               <p v-if="trackingHint" class="text-xs mt-1.5 flex items-center gap-1" style="color: var(--info);">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -339,7 +425,7 @@ async function submit() {
 
           <!-- 成功 -->
           <div v-if="successMsg" class="flex items-center gap-2.5 p-3.5 rounded-xl text-sm bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-300">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>
             </svg>
             {{ successMsg }}
@@ -356,27 +442,25 @@ async function submit() {
                    hover:bg-slate-200 dark:hover:bg-white/10
                    active:scale-95 transition-all cursor-pointer"
           >
-            关闭
+            取消
           </button>
           <button
             @click="submit"
-            :disabled="submitting || isDebouncing || !!formError || !!outOverWarning || (mode !== 'adjust' && quantity <= 0)"
-            class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed active:scale-[0.98]"
-            :style="(submitting || isDebouncing || !!formError || !!outOverWarning || (mode !== 'adjust' && quantity <= 0)) ? '' : `background: ${config.gradient}; box-shadow: 0 4px 14px ${config.glow};`"
+            :disabled="submitting"
+            class="flex-1 py-2.5 text-sm font-medium rounded-xl text-white
+                   border transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+            :style="{
+              background: config.gradient,
+              borderColor: config.textColor,
+              boxShadow: `0 4px 14px ${config.glow}`
+            }"
           >
-            <span v-if="submitting" class="flex items-center justify-center gap-2">
-              <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
-              处理中...
-            </span>
-            <span v-else-if="isDebouncing" class="flex items-center justify-center gap-1.5">
+            <span v-if="submitting" class="flex items-center gap-2">
               <svg class="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
               </svg>
-              {{ DEBOUNCE_MS / 1000 }}s 防抖中…
+              <span>{{ DEBOUNCE_MS / 1000 }}s 防抖中…</span>
             </span>
             <span v-else>{{ config.action }}</span>
           </button>
@@ -384,6 +468,38 @@ async function submit() {
       </div>
     </div>
   </Transition>
+
+  <!-- 扫码弹窗 -->
+  <div
+    v-if="showScanner"
+    class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80"
+  >
+    <div class="relative w-full max-w-sm rounded-2xl overflow-hidden bg-black">
+      <video
+        ref="scannerVideo"
+        class="w-full aspect-square object-cover"
+        playsinline
+      ></video>
+      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div class="w-48 h-48 border-2 border-white rounded-2xl"></div>
+      </div>
+      <div v-if="scannerError" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 text-white text-sm px-6 py-4 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mb-3 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+        </svg>
+        {{ scannerError }}
+      </div>
+      <button
+        @click="stopScanner"
+        class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-all cursor-pointer"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
+      <p class="absolute bottom-4 left-0 right-0 text-center text-white text-sm">将条形码放入框内自动识别</p>
+    </div>
+  </div>
 </template>
 
 <style scoped>

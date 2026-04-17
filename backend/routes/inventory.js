@@ -455,7 +455,7 @@ router.post('/scan-out', (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 router.get('/logs', (req, res) => {
-  const { product_id, keyword, type, limit, offset } = req.query;
+  const { product_id, keyword, type, limit, offset, unbound_only } = req.query;
   const params = [];
 
   // ── 主查询：直接从 inventory_logs 读取快照字段，移除 LEFT JOIN ──
@@ -473,6 +473,7 @@ router.get('/logs', (req, res) => {
       l.product_name,
       l.category_name,
       l.tracking_number,
+      l.domestic_tracking,
       p.sku_code,
       p.unit as product_unit
     FROM inventory_logs l
@@ -485,14 +486,18 @@ router.get('/logs', (req, res) => {
     params.push(product_id);
   }
   if (keyword) {
-    // 优先匹配快照字段，再兼容 sku_code
-    sql += ' AND (l.product_name LIKE ? OR l.category_name LIKE ? OR p.sku_code LIKE ?)';
+    // 优先匹配快照字段，再兼容 sku_code，同时匹配运单号和国内单号
+    sql += ' AND (l.product_name LIKE ? OR l.category_name LIKE ? OR p.sku_code LIKE ? OR l.tracking_number LIKE ? OR l.domestic_tracking LIKE ?)';
     const kw = `%${keyword}%`;
-    params.push(kw, kw, kw);
+    params.push(kw, kw, kw, kw, kw);
   }
   if (type) {
     sql += ' AND l.type = ?';
     params.push(type);
+  }
+  // 集包模式：只查询出库且未绑定国内单号的记录
+  if (unbound_only === 'true' || unbound_only === true) {
+    sql += " AND l.type = 'out' AND (l.domestic_tracking IS NULL OR l.domestic_tracking = '')";
   }
 
   sql += ' ORDER BY l.created_at DESC';
@@ -506,8 +511,11 @@ router.get('/logs', (req, res) => {
   `;
   const countParams = [...params];
   if (product_id) { countSql += ' AND l.product_id = ?'; }
-  if (keyword) { countSql += ' AND (l.product_name LIKE ? OR l.category_name LIKE ? OR p.sku_code LIKE ?)'; }
+  if (keyword) { countSql += ' AND (l.product_name LIKE ? OR l.category_name LIKE ? OR p.sku_code LIKE ? OR l.tracking_number LIKE ? OR l.domestic_tracking LIKE ?)'; }
   if (type) { countSql += ' AND l.type = ?'; }
+  if (unbound_only === 'true' || unbound_only === true) {
+    countSql += " AND l.type = 'out' AND (l.domestic_tracking IS NULL OR l.domestic_tracking = '')";
+  }
 
   const countResult = getOne(countSql, countParams);
   const total = countResult ? (countResult.total || 0) : 0;
@@ -539,6 +547,66 @@ router.delete('/logs', (req, res) => {
   const placeholders = ids.map(() => '?').join(',');
   const result = runQuery(`DELETE FROM inventory_logs WHERE id IN (${placeholders})`, ids);
   res.json({ success: true, message: `成功删除 ${ids.length} 条日志` });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 更新日志备注
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.put('/logs/:id/note', (req, res) => {
+  const { id } = req.params;
+  const { note } = req.body;
+
+  if (note === undefined) {
+    return res.status(400).json({ success: false, error: '缺少 note 参数' });
+  }
+
+  const result = runQuery(
+    'UPDATE inventory_logs SET note = ? WHERE id = ?',
+    [String(note), id]
+  );
+
+  if (result.success) {
+    const updated = getOne('SELECT * FROM inventory_logs WHERE id = ?', [id]);
+    res.json({ success: true, data: updated });
+  } else {
+    res.status(500).json({ success: false, error: '更新备注失败' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 批量绑定国内单号（集包功能）
+// ═══════════════════════════════════════════════════════════════════════════
+
+router.put('/logs/batch-domestic-tracking', (req, res) => {
+  const { ids, domestic_tracking } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ success: false, error: '缺少待更新的日志 ID 列表' });
+  }
+  if (!domestic_tracking || !String(domestic_tracking).trim()) {
+    return res.status(400).json({ success: false, error: '国内单号不能为空' });
+  }
+
+  const tracking = String(domestic_tracking).trim();
+  const placeholders = ids.map(() => '?').join(',');
+
+  // 批量更新 domestic_tracking 字段
+  const result = runQuery(
+    `UPDATE inventory_logs SET domestic_tracking = ? WHERE id IN (${placeholders})`,
+    [tracking, ...ids]
+  );
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `成功绑定 ${ids.length} 条记录的国内单号：${tracking}`,
+      updatedCount: ids.length,
+      domestic_tracking: tracking,
+    });
+  } else {
+    res.status(500).json({ success: false, error: '批量绑定国内单号失败' });
+  }
 });
 
 module.exports = router;

@@ -191,7 +191,7 @@ function isActive(path) {
                    bg-gradient-to-br from-indigo-500 to-indigo-600
                    shadow-md shadow-indigo-500/25"
           >
-            <svg class="w-[13px] h-[13px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="w-[13px] h-[13px] shrink-0" viewBox="0 0 24 24" fill="none" :stroke="isDark ? 'white' : '#ffffff'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
             </svg>
           </div>

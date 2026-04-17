@@ -13,6 +13,7 @@ const products = ref([])
 const categories = ref([])
 const loading = ref(false)
 const listError = ref('')
+const copiedId = ref(null)
 
 const filterCategory = ref('')
 const filterKeyword = ref('')
@@ -176,6 +177,21 @@ function openLabelPrint(product) {
   showLabelPrintModal.value = true
 }
 
+async function copyProductName(product, event) {
+  try {
+    await navigator.clipboard.writeText(product.name)
+    copiedId.value = product.id
+    MyMessage.success('已复制：' + product.name)
+    setTimeout(() => {
+      if (copiedId.value === product.id) {
+        copiedId.value = null
+      }
+    }, 2000)
+  } catch (e) {
+    MyMessage.error('复制失败')
+  }
+}
+
 // 拖拽排序结束后的回调
 async function onDragEnd(evt) {
   // 检查是否真正改变了顺序
@@ -255,7 +271,7 @@ onMounted(() => {
           <div class="flex-1 min-w-0 h-10">
             <MyFilterSearch
               v-model="filterKeyword"
-              placeholder="搜索名称 / SKU / 库位"
+              placeholder="搜索商品名称"
               @search="onKeywordInput"
             />
           </div>
@@ -272,7 +288,7 @@ onMounted(() => {
           <div class="flex-1 min-w-0">
             <MyFilterSearch
               v-model="filterKeyword"
-              placeholder="搜索名称 / SKU / 库位"
+              placeholder="搜索商品名称"
               @search="onKeywordInput"
             />
           </div>
@@ -367,7 +383,24 @@ onMounted(() => {
                       </span>
                     </td>
                     <td class="px-5 py-3.5">
-                      <div class="text-sm font-medium text-slate-900 dark:text-white leading-snug">{{ p.name }}</div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-medium text-slate-900 dark:text-white leading-snug">{{ p.name }}</span>
+                        <button
+                          @click="copyProductName(p, $event)"
+                          class="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                          :class="copiedId === p.id
+                            ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10'
+                            : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'"
+                          title="复制名称"
+                        >
+                          <svg v-if="copiedId !== p.id" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                          </svg>
+                          <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 6 9 17l-5-5"/>
+                          </svg>
+                        </button>
+                      </div>
                       <div v-if="p.remark" class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate max-w-[200px]">{{ p.remark }}</div>
                     </td>
                     <td class="px-5 py-3.5 text-center">
@@ -462,7 +495,13 @@ onMounted(() => {
                 <div class="flex-1 min-w-0">
                   <!-- 商品名称 + 状态标签 -->
                   <div class="flex items-start justify-between gap-2 mb-1.5">
-                    <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug line-clamp-2 flex-1">{{ p.name }}</h3>
+                    <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug line-clamp-2 flex-1">
+                      <span class="align-middle">{{ p.name }}</span>
+                      <button @click.stop="copyProductName(p)" class="inline-flex items-center justify-center align-middle ml-1.5 text-slate-400 hover:text-indigo-500 active:scale-90 transition-colors">
+                        <svg v-if="copiedId === p.id" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      </button>
+                    </h3>
                     <span class="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0" :class="stockStatus(p) === 'zero' ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400' : (stockStatus(p) === 'warn' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400')">
                       {{ stockLabel(p) }}
                     </span>

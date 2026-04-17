@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { getLogs, deleteLogs } from '../api/inventory.js'
+import { ref, computed, onMounted, watch, onUnmounted, nextTick } from 'vue'
+import { BrowserMultiFormatReader } from '@zxing/library'
+import { getLogs, deleteLogs, updateLogNote, updateBatchDomesticTracking } from '../api/inventory.js'
 import { getCategories } from '../api/categories.js'
 import { getProducts } from '../api/products.js'
 import { MyFilterSelect, MyFilterSearch, MyModal, MyMessage } from '../components/ui/index.js'
@@ -12,6 +13,9 @@ const loading = ref(false)
 const error = ref('')
 const filterType = ref('')
 const filterKeyword = ref('')
+const copiedLogId = ref(null)
+const copiedDomesticTrackingId = ref(null)
+const copiedTrackingId = ref(null)
 
 // ─── 分页状态 ───────────────────────────────────────────────────────────────
 const currentPage = ref(1)
@@ -19,9 +23,21 @@ const pageSize = ref(20)
 const total = ref(0)
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value) || 1)
 
-// ─── 批量选择状态 ────────────────────────────────────────────────────────────
+// ─── 批量选择状态 ─────────────────────────────────────────��──────────────────
 const selectedIds = ref(new Set())
 const selectMode = ref(false) // 是否进入多选模式
+
+// ─── 集包模式状态 ────────────────────────────────────────────────────────────
+const isConsolidationMode = ref(false) // 是否处于集包模式
+const showConsolidateModal = ref(false) // 集包弹窗
+const consolidatingDomesticTracking = ref('') // 正在绑定的国内单号
+const consolidating = ref(false) // 绑定中状态
+
+// ─── 扫码功能状态 ─────────────────────────────────────────────────────────────
+const showScanner = ref(false)
+const scannerVideo = ref(null)
+const scannerError = ref('')
+let codeReader = null
 
 // ─── 弹窗状态 ───────────────────────────────────────────────────────────────
 const showExportModal = ref(false)
@@ -62,6 +78,8 @@ watch(pageSizeOpen, (open) => {
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', pageSizeOutsideClick)
+  // 清理扫码资源
+  stopScanner()
 })
 
 // ─── 加载日志 ───────────────────────────────────────────────────────────────
@@ -72,6 +90,11 @@ async function loadLogs() {
     const params = {}
     if (filterType.value) params.type = filterType.value
     if (filterKeyword.value.trim()) params.keyword = filterKeyword.value.trim()
+    // 集包模式下，请求未绑定的出库记录
+    if (isConsolidationMode.value) {
+      params.unbound_only = true
+      params.type = 'out' // 强制为出库类型
+    }
     params.limit = pageSize.value
     params.offset = (currentPage.value - 1) * pageSize.value
 
@@ -101,6 +124,12 @@ function onKeywordInput() {
 function resetFilters() {
   filterType.value = ''
   filterKeyword.value = ''
+  // 退出集包模式
+  if (isConsolidationMode.value) {
+    isConsolidationMode.value = false
+    selectMode.value = false
+    selectedIds.value.clear()
+  }
   currentPage.value = 1
   loadLogs()
 }
@@ -146,6 +175,23 @@ function toggleSelectMode() {
   if (!selectMode.value) {
     selectedIds.value.clear()
   }
+}
+
+// ─── 进入集包模式 ────────────────────────────────────────────────────────────
+function enterConsolidationMode() {
+  isConsolidationMode.value = true
+  // 注意：不自动开启 selectMode，批量选择需要用户手动点击"批量选择"按钮
+  filterType.value = 'out'
+  currentPage.value = 1
+  loadLogs()
+}
+
+// ─── 退出集包模式 ────────────────────────────────────────────────────────────
+function exitConsolidationMode() {
+  isConsolidationMode.value = false
+  selectMode.value = false
+  selectedIds.value.clear()
+  resetFilters()
 }
 
 function toggleSelect(id) {
@@ -210,6 +256,12 @@ async function confirmBatchDelete() {
 
 // ─── Excel 导出 ─────────────────────────────────────────────────────────────
 const exporting = ref(false)
+
+// ─── 备注编辑 ────────────────────────────────────────────────────────────────
+const showNoteModal = ref(false)
+const editingNoteLog = ref(null)
+const editingNoteText = ref('')
+const savingNote = ref(false)
 
 function handleExportClick() {
   showExportModal.value = true
@@ -282,10 +334,10 @@ async function createLogSheet(workbook, data, cfg) {
     views: [{ state: 'frozen', ySplit: 2 }],
   })
 
-  // 设置 autoFilter（点击筛选）
+  // 设置 autoFilter（点击筛选，扩展到第11列）
   sheet.autoFilter = {
     from: { row: 2, column: 1 },
-    to: { row: 2, column: 10 },
+    to: { row: 2, column: 11 },
   }
 
   // ── Row 1：空行（合并单元格区域外） ──
@@ -296,7 +348,7 @@ async function createLogSheet(workbook, data, cfg) {
   const header = [
     '操作时间', '商品名称', 'SKU', '大类',
     '操作类型', '变动数量', '操作前', '操作后',
-    '运单号', '备注',
+    '运单号', '国内集包单号', '备注',
   ]
   const headerRow = sheet.addRow(header)
   headerRow.height = 36
@@ -328,6 +380,55 @@ async function createLogSheet(workbook, data, cfg) {
     dateGroups.push({ date: currentDate, logs: currentGroup })
   }
 
+  // ── 计算列宽：收集每列的最大内容长度 ──
+  const colLengths = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // 11列
+
+  // 辅助函数：计算字符串在Excel中的显示宽度（中文=1.8，英文数字=1）
+  function calcStrWidth(str) {
+    if (!str) return 0
+    let width = 0
+    for (const char of String(str)) {
+      width += /[\u4e00-\u9fa5]/.test(char) ? 1.8 : 1
+    }
+    return Math.ceil(width)
+  }
+
+  // 遍历所有数据，收集每列最大宽度
+  dateGroups.forEach(group => {
+    group.logs.forEach(log => {
+      const rowVals = [
+        formatDateOnly(log.created_at),
+        log.product_name || '',
+        log.sku_code || '',
+        log.category_name || '',
+        typeLabel(log.type),
+        safeStock(log.quantity),
+        safeStock(log.stock_before),
+        safeStock(log.stock_after),
+        log.tracking_number != null && log.tracking_number !== '' ? String(log.tracking_number) : '',
+        log.domestic_tracking != null && log.domestic_tracking !== '' ? String(log.domestic_tracking) : '',
+        log.note || '',
+      ]
+      rowVals.forEach((val, idx) => {
+        const len = calcStrWidth(val)
+        if (len > colLengths[idx]) colLengths[idx] = len
+      })
+    })
+  })
+
+  // 添加表头宽度
+  const headers = ['操作时间', '商品名称', 'SKU', '大类', '操作类型', '变动数量', '操作前', '操作后', '运单号', '国内集包单号', '备注']
+  headers.forEach((h, idx) => {
+    const len = calcStrWidth(h)
+    if (len > colLengths[idx]) colLengths[idx] = len
+  })
+
+  // 计算最终列宽（限制最小和最大宽度，更紧凑）
+  const finalColWidths = colLengths.map(w => {
+    const calculated = Math.max(w, 6) + 1 // 至少6字符
+    return Math.min(calculated, 30) // 最多30字符
+  })
+
   // 写入数据行（带日期合并）
   const startDataRow = 3
   let rowIdx = startDataRow
@@ -347,6 +448,7 @@ async function createLogSheet(workbook, data, cfg) {
         safeStock(log.stock_before),
         safeStock(log.stock_after),
         log.tracking_number != null && log.tracking_number !== '' ? String(log.tracking_number) : '',
+        log.domestic_tracking != null && log.domestic_tracking !== '' ? String(log.domestic_tracking) : '',
         log.note || '',
       ]
 
@@ -371,9 +473,62 @@ async function createLogSheet(workbook, data, cfg) {
     }
   })
 
-  // ── 列宽设置 ──
-  const colWidths = [16, 24, 18, 12, 10, 10, 10, 10, 22, 36]
-  colWidths.forEach((w, i) => {
+  // ── 国内集包单号列（第10列）的单元格合并逻辑 ──
+  // 修复：遍历所有行，对连续相同的 domestic_tracking 进行合并
+  const domesticColIdx = 10 // 第10列（1-based）
+  let mergeStartRow = startDataRow
+  let mergeCount = 1
+  let prevDomesticTracking = ''
+  let firstIteration = true
+
+  // 展平所有日志到一维数组
+  const allLogs = []
+  dateGroups.forEach(group => {
+    group.logs.forEach(log => {
+      allLogs.push(log)
+    })
+  })
+
+  // 遍历所有展平的数据行
+  for (let i = 0; i < allLogs.length; i++) {
+    const log = allLogs[i]
+    const currentDomestic = (log.domestic_tracking != null && log.domestic_tracking !== '') ? String(log.domestic_tracking) : ''
+    const rowNum = startDataRow + i
+
+    if (firstIteration) {
+      // 第一行，初始化
+      prevDomesticTracking = currentDomestic
+      mergeStartRow = rowNum
+      mergeCount = 1
+      firstIteration = false
+    } else {
+      // 检查是否需要合并（当前单号与前一行相同，且都不为空）
+      if (currentDomestic !== '' && currentDomestic === prevDomesticTracking) {
+        mergeCount++
+      } else {
+        // 执行合并（如果有连续的相同单号）
+        if (mergeCount > 1) {
+          sheet.mergeCells(mergeStartRow, domesticColIdx, mergeStartRow + mergeCount - 1, domesticColIdx)
+          const mergedCell = sheet.getCell(mergeStartRow, domesticColIdx)
+          mergedCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+        }
+        // 重置
+        mergeStartRow = rowNum
+        mergeCount = 1
+        prevDomesticTracking = currentDomestic
+      }
+    }
+
+    // 最后一行的合并处理
+    if (i === allLogs.length - 1 && mergeCount > 1) {
+      sheet.mergeCells(mergeStartRow, domesticColIdx, mergeStartRow + mergeCount - 1, domesticColIdx)
+      const mergedCell = sheet.getCell(mergeStartRow, domesticColIdx)
+      mergedCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false }
+    }
+  }
+
+  // ── 列宽设置（使用自动计算的宽度） ──
+  finalColWidths.forEach((w, i) => {
     sheet.getColumn(i + 1).width = w
   })
 }
@@ -619,16 +774,62 @@ async function createCategorySheet(workbook, category, products, logData, cfg) {
     applyTotalStyle(totalAmountCell, cfg)
   }
 
-  // ── 列宽设置 ──
-  const colWidths = [
-    ...schemaFields.map(() => 14),
-    18, // SKU
-    24, // 商品名称
-    12, // 数量
-    12, // 单价
-    14, // 金额
-  ]
-  colWidths.forEach((w, i) => {
+  // ── 列宽设置（自动计算） ──
+  // 收集每列的最大内容宽度
+  const colLengths = []
+  for (let i = 0; i < totalColCount; i++) colLengths.push(0)
+
+  // 辅助函数：计算字符串宽度
+  function calcStrWidth(str) {
+    if (!str) return 0
+    let width = 0
+    for (const char of String(str)) {
+      width += /[\u4e00-\u9fa5]/.test(char) ? 1.8 : 1
+    }
+    return Math.ceil(width)
+  }
+
+  // 计算表头宽度
+  headerLabels.forEach((h, idx) => {
+    const len = calcStrWidth(h)
+    if (len > colLengths[idx]) colLengths[idx] = len
+  })
+
+  // 计算数据行宽度
+  rowsData.forEach(rowItem => {
+    const product = rowItem.product
+    const attrs = rowItem.attrs
+    const stockQty = Number(product.current_stock) || 0
+    const prodPrice = product.cost_price != null && product.cost_price !== ''
+      ? Number(product.cost_price) : null
+    const catPrice = category.price != null && category.price !== ''
+      ? Number(category.price) : null
+    const unitPrice = prodPrice !== null && !isNaN(prodPrice) ? prodPrice
+      : (catPrice !== null && !isNaN(catPrice) ? catPrice : 0)
+    const displayPrice = unitPrice > 0 ? unitPrice : 0
+
+    const rowVals = [
+      ...schemaFields.map(f => String(attrs[f] || '').trim()),
+      product.sku_code || '',
+      product.name || '',
+      stockQty,
+      displayPrice,
+      '' // 金额列占位
+    ]
+
+    rowVals.forEach((val, idx) => {
+      const len = calcStrWidth(val)
+      if (len > colLengths[idx]) colLengths[idx] = len
+    })
+  })
+
+  // 计算最终列宽（紧凑）
+  const finalColWidths = colLengths.map(w => {
+    const calculated = Math.max(w, 6) + 1 // 至少6字符
+    return Math.min(calculated, 30) // 最多30字符
+  })
+
+  finalColWidths.forEach((w, i) => {
     sheet.getColumn(i + 1).width = w
   })
 }
@@ -654,14 +855,14 @@ async function confirmExport() {
     }
 
     // 1.2 获取全部分类（用于获取大类顺序和模板）
-    // 按 sort_order 升序排列，然后反转，实现倒序展示（产品大类第一个的放最后）
+    // 按 sort_order 正序排列，保持与后台拖拽排序一致
     const catsRes = await getCategories()
     const categoriesData = (catsRes.data.data || []).sort((a, b) => {
       // sort_order 相同时按 id 排序
       const orderA = a.sort_order ?? a.id ?? 0
       const orderB = b.sort_order ?? b.id ?? 0
       return orderA - orderB
-    }).reverse() // 倒序排列
+    })
 
     // 1.3 获取全部产品（用于获取实时库存和单价）
     const prodsRes = await getProducts({})
@@ -756,9 +957,186 @@ function typeDotClass(type) {
   return 'bg-slate-400'
 }
 
+async function copyLogName(log, event) {
+  try {
+    await navigator.clipboard.writeText(log.product_name || '')
+    copiedLogId.value = log.id
+    MyMessage.success('已复制：' + log.product_name)
+    setTimeout(() => {
+      if (copiedLogId.value === log.id) {
+        copiedLogId.value = null
+      }
+    }, 2000)
+  } catch (e) {
+    MyMessage.error('复制失败')
+  }
+}
+
+async function copyDomesticTracking(tracking, event) {
+  try {
+    await navigator.clipboard.writeText(tracking || '')
+    copiedDomesticTrackingId.value = tracking // 使用单号本身作为 ID
+    MyMessage.success('已复制：' + tracking)
+    setTimeout(() => {
+      if (copiedDomesticTrackingId.value === tracking) {
+        copiedDomesticTrackingId.value = null
+      }
+    }, 2000)
+  } catch (e) {
+    MyMessage.error('复制失败')
+  }
+}
+
+async function copyTrackingNumber(tracking, event) {
+  try {
+    await navigator.clipboard.writeText(tracking || '')
+    copiedTrackingId.value = tracking // 使用单号本身作为 ID
+    MyMessage.success('已复制：' + tracking)
+    setTimeout(() => {
+      if (copiedTrackingId.value === tracking) {
+        copiedTrackingId.value = null
+      }
+    }, 2000)
+  } catch (e) {
+    MyMessage.error('复制失败')
+  }
+}
+
+function openNoteEdit(log) {
+  editingNoteLog.value = log
+  editingNoteText.value = log.note || ''
+  showNoteModal.value = true
+}
+
+async function saveNote() {
+  if (!editingNoteLog.value) return
+  savingNote.value = true
+  try {
+    const res = await updateLogNote(editingNoteLog.value.id, editingNoteText.value)
+    if (res.data.success) {
+      const idx = logs.value.findIndex(l => l.id === editingNoteLog.value.id)
+      if (idx !== -1) {
+        logs.value[idx].note = editingNoteText.value
+      }
+      showNoteModal.value = false
+      MyMessage.success('备注已更新')
+    }
+  } catch (e) {
+    MyMessage.error('更新备注失败')
+  } finally {
+    savingNote.value = false
+  }
+}
+
 function safeStock(val) {
   const n = Number(val)
   return isNaN(n) ? 0 : n
+}
+
+// ─── 扫码功能 ───────────────────────────────────────────────────────────────
+async function startScanner() {
+  scannerError.value = ''
+  showScanner.value = true
+
+  await nextTick()
+
+  const videoEl = scannerVideo.value
+  if (!videoEl) {
+    scannerError.value = '扫码组件初始化失败'
+    showScanner.value = false
+    return
+  }
+
+  videoEl.setAttribute('playsinline', 'true')
+  videoEl.setAttribute('webkit-playsinline', 'true')
+  videoEl.muted = true
+
+  try {
+    codeReader = new BrowserMultiFormatReader()
+    await codeReader.decodeFromConstraints(
+      {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          focusMode: 'continuous'
+        }
+      },
+      videoEl,
+      (result, err) => {
+        if (result) {
+          consolidatingDomesticTracking.value = result.getText()
+          stopScanner()
+          MyMessage.success('扫码成功：' + consolidatingDomesticTracking.value)
+        }
+      }
+    )
+  } catch (e) {
+    const name = e?.name || 'Error'
+    if (name === 'NotAllowedError') {
+      scannerError.value = '摄像头权限被拒绝'
+    } else if (name === 'NotFoundError') {
+      scannerError.value = '未检测到摄像头'
+    } else {
+      scannerError.value = '扫码失败: ' + (e.message || name)
+    }
+    showScanner.value = false
+  }
+}
+
+function stopScanner() {
+  showScanner.value = false
+  if (codeReader) {
+    try { codeReader.reset() } catch(e) {}
+    codeReader = null
+  }
+  const videoEl = scannerVideo.value
+  if (videoEl && videoEl.srcObject) {
+    const tracks = videoEl.srcObject.getTracks()
+    tracks.forEach(track => track.stop())
+    videoEl.srcObject = null
+  }
+}
+
+// ─── 集包逻辑 ───────────────────────────────────────────────────────────────
+async function handleScanDomesticTracking() {
+  await startScanner()
+}
+
+async function confirmConsolidate() {
+  const tracking = consolidatingDomesticTracking.value.trim()
+  if (!tracking) {
+    MyMessage.warning('请输入国内单号')
+    return
+  }
+
+  if (selectedIds.value.size === 0) {
+    MyMessage.warning('请先选择要绑定的记录')
+    return
+  }
+
+  consolidating.value = true
+  try {
+    const { updateBatchDomesticTracking } = await import('../api/inventory.js')
+    const res = await updateBatchDomesticTracking(Array.from(selectedIds.value), tracking)
+
+    if (res.data.success) {
+      MyMessage.success(`已成功绑定 ${selectedIds.value.size} 条记录，单号：${tracking}`)
+
+      // 关闭弹窗，重置状态
+      showConsolidateModal.value = false
+      consolidatingDomesticTracking.value = ''
+
+      // 退出集包模式，刷新列表
+      exitConsolidationMode()
+    } else {
+      MyMessage.error(res.data.error || '绑定失败')
+    }
+  } catch (e) {
+    MyMessage.error('绑定失败：' + (e.response?.data?.error || '未知错误'))
+  } finally {
+    consolidating.value = false
+  }
 }
 
 onMounted(loadLogs)
@@ -776,15 +1154,127 @@ onMounted(loadLogs)
           <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">记录所有库存变动历史</p>
         </div>
 
-        <!-- 操作按钮组 -->
-        <div class="flex items-center gap-2 flex-wrap">
+        <!-- 操作按钮组（手机端一行布局） -->
+        <div class="flex lg:hidden items-center gap-1.5 overflow-x-auto">
+          <!-- 集包按钮（紫色/靛蓝色，明显区分） -->
+          <button
+            @click="enterConsolidationMode"
+            :disabled="isConsolidationMode"
+            :class="[
+              isConsolidationMode
+                ? 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-indigo-500 dark:bg-indigo-600 text-white border-transparent transition-all duration-200 cursor-not-allowed opacity-70 shrink-0'
+                : 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white shadow-sm active:scale-95 transition-all duration-200 cursor-pointer shrink-0'
+            ]"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+            </svg>
+            集包
+          </button>
+
+          <!-- 退出集包按钮（仅集包模式显示） -->
+          <button
+            v-if="isConsolidationMode"
+            @click="exitConsolidationMode"
+            class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium
+                   bg-rose-500 hover:bg-rose-600 text-white shadow-sm
+                   active:scale-95 transition-all duration-200 cursor-pointer shrink-0"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            退出
+          </button>
+
+          <!-- 导出按钮 -->
+          <button
+            @click="handleExportClick"
+            :disabled="exporting"
+            class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium
+                   bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10
+                   text-slate-600 dark:text-slate-400
+                   hover:bg-slate-50 dark:hover:bg-white/5
+                   disabled:opacity-50 disabled:cursor-not-allowed
+                   active:scale-95 transition-all duration-200 cursor-pointer shrink-0"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0-3-3m3 3 3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            {{ exporting ? '导出中' : '导出' }}
+          </button>
+
+          <!-- 批量选择开关 -->
+          <button
+            @click="toggleSelectMode"
+            :class="[
+              selectMode
+                ? 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-violet-500 hover:bg-violet-600 dark:bg-violet-600 dark:hover:bg-violet-500 text-white border-transparent transition-all duration-200 cursor-pointer shrink-0'
+                : 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-all duration-200 cursor-pointer shrink-0'
+            ]"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            {{ selectMode ? '取消' : '选择' }}
+          </button>
+
+          <!-- 刷新 -->
+          <button
+            @click="loadLogs"
+            class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium
+                   bg-white dark:bg-slate-800
+                   border border-slate-200 dark:border-white/10
+                   text-slate-600 dark:text-slate-400
+                   hover:bg-slate-50 dark:hover:bg-white/5
+                   active:scale-95 transition-all duration-200 cursor-pointer shrink-0"
+          >
+            <svg class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            刷新
+          </button>
+        </div>
+
+        <!-- PC端：操作按钮组（大屏显示） -->
+        <div class="hidden lg:flex items-center gap-3">
+          <!-- 集包按钮 -->
+          <button
+            @click="enterConsolidationMode"
+            :disabled="isConsolidationMode"
+            :class="[
+              isConsolidationMode
+                ? 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-indigo-500 dark:bg-indigo-600 text-white border-transparent transition-all duration-200 cursor-not-allowed opacity-70'
+                : 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white shadow-sm active:scale-95 transition-all duration-200 cursor-pointer'
+            ]"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+            </svg>
+            集包
+          </button>
+
+          <!-- 退出集包按钮（仅集包模式显示） -->
+          <button
+            v-if="isConsolidationMode"
+            @click="exitConsolidationMode"
+            class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
+                   bg-rose-500 hover:bg-rose-600 text-white shadow-sm
+                   active:scale-95 transition-all duration-200 cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            退出集包
+          </button>
+
           <!-- 导出按钮 -->
           <button
             @click="handleExportClick"
             :disabled="exporting"
             class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
-                   bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500
-                   text-white shadow-sm
+                   bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10
+                   text-slate-600 dark:text-slate-400
+                   hover:bg-slate-50 dark:hover:bg-white/5
                    disabled:opacity-50 disabled:cursor-not-allowed
                    active:scale-95 transition-all duration-200 cursor-pointer"
           >
@@ -841,7 +1331,7 @@ onMounted(loadLogs)
           <div class="flex-1 min-w-0 h-10">
             <MyFilterSearch
               v-model="filterKeyword"
-              placeholder="搜索商品名称 / SKU / 运单号"
+              placeholder="搜索商品名称/运单号/国内面单"
               @search="onKeywordInput"
             />
           </div>
@@ -858,7 +1348,7 @@ onMounted(loadLogs)
           <div class="flex-1 min-w-0">
             <MyFilterSearch
               v-model="filterKeyword"
-              placeholder="搜索商品名称 / SKU / 运单号"
+              placeholder="搜索商品名称/运单号/国内面单"
               @search="onKeywordInput"
             />
           </div>
@@ -888,7 +1378,7 @@ onMounted(loadLogs)
         leave-to-class="opacity-0 -translate-y-2"
       >
         <div
-          v-if="selectMode && selectedCount > 0"
+          v-if="(selectMode || isConsolidationMode) && selectedCount > 0"
           class="mb-3 md:mb-4 flex items-center justify-between gap-3 p-3 lg:p-4 rounded-xl
                  bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20"
         >
@@ -898,17 +1388,35 @@ onMounted(loadLogs)
             </svg>
             <span class="font-medium">已选择 {{ selectedCount }} 条记录</span>
           </div>
-          <button
-            @click="batchDeleteLogs"
-            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-                   bg-rose-500 hover:bg-rose-600 text-white
-                   active:scale-95 transition-all duration-200 cursor-pointer"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-            </svg>
-            删除选中
-          </button>
+          <div class="flex items-center gap-2">
+            <!-- 集包绑定按钮（仅集包模式显示） -->
+            <button
+              v-if="isConsolidationMode"
+              @click="showConsolidateModal = true"
+              class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                     bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500
+                     text-white shadow-sm
+                     active:scale-95 transition-all duration-200 cursor-pointer"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+              </svg>
+              绑定国内单号
+            </button>
+            <!-- 删除选中按钮（仅批量选择模式显示） -->
+            <button
+              v-if="selectMode && !isConsolidationMode"
+              @click="batchDeleteLogs"
+              class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                     bg-rose-500 hover:bg-rose-600 text-white
+                     active:scale-95 transition-all duration-200 cursor-pointer"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              删除选中
+            </button>
+          </div>
         </div>
       </Transition>
 
@@ -953,7 +1461,7 @@ onMounted(loadLogs)
               <thead>
               <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
                 <!-- 选择列 -->
-                <th v-if="selectMode" class="w-10 px-5 py-3.5 text-left">
+                <th v-if="selectMode || isConsolidationMode" class="w-10 px-5 py-3.5 text-left">
                   <label class="custom-checkbox">
                     <input
                       type="checkbox"
@@ -967,10 +1475,11 @@ onMounted(loadLogs)
                 <th class="px-5 py-3.5 text-left font-medium">商品名称</th>
                 <th class="px-5 py-3.5 text-center font-medium">大类</th>
                 <th class="px-5 py-3.5 text-center font-medium">类型</th>
-                <th class="px-5 py-3.5 text-center font-medium">变动数量</th>
-                <th class="px-5 py-3.5 text-center font-medium">操作前</th>
-                <th class="px-5 py-3.5 text-center font-medium">操作后</th>
-                <th class="px-5 py-3.5 text-left font-medium">运单号</th>
+                <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">变动数量</th>
+                <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">操作前</th>
+                <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">操作后</th>
+                <th class="px-5 py-3.5 text-left font-medium whitespace-nowrap">运单号</th>
+                <th class="px-5 py-3.5 text-left font-medium whitespace-nowrap">集包号</th>
                 <th class="px-5 py-3.5 text-left font-medium pr-5">备注</th>
               </tr>
             </thead>
@@ -980,11 +1489,11 @@ onMounted(loadLogs)
                 :key="log.id"
                 :class="[
                   'hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors',
-                  selectMode && selectedIds.has(log.id) ? 'bg-violet-50/50 dark:bg-violet-500/5' : ''
+                  (selectMode || isConsolidationMode) && selectedIds.has(log.id) ? 'bg-violet-50/50 dark:bg-violet-500/5' : ''
                 ]"
               >
                 <!-- 复选框 -->
-                <td v-if="selectMode" class="px-5 py-3.5">
+                <td v-if="selectMode || isConsolidationMode" class="px-5 py-3.5">
                   <label class="custom-checkbox">
                     <input
                       type="checkbox"
@@ -997,8 +1506,25 @@ onMounted(loadLogs)
                 <td class="px-5 py-3.5 text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap font-mono">
                   {{ formatTime(log.created_at) }}
                 </td>
-                <td class="px-5 py-3.5 text-sm font-medium text-slate-900 dark:text-white">
-                  {{ log.product_name || '-' }}
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-slate-900 dark:text-white">{{ log.product_name || '-' }}</span>
+                    <button
+                      @click="copyLogName(log, $event)"
+                      class="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                      :class="copiedLogId === log.id
+                        ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10'
+                        : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'"
+                      title="复制名称"
+                    >
+                      <svg v-if="copiedLogId !== log.id" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                      </svg>
+                      <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 6 9 17l-5-5"/>
+                      </svg>
+                    </button>
+                  </div>
                 </td>
                 <td class="px-5 py-3.5 text-center">
                   <span v-if="log.category_name" class="inline-flex px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/5">
@@ -1029,17 +1555,50 @@ onMounted(loadLogs)
                 <td class="px-5 py-3.5">
                   <span
                     v-if="log.tracking_number"
-                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20"
+                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20 cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors"
+                    @click="copyTrackingNumber(log.tracking_number, $event)"
+                    title="点击复制运单号"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
                     </svg>
                     {{ log.tracking_number }}
+                    <svg v-if="copiedTrackingId === log.tracking_number" xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 6 9 17l-5-5"/>
+                    </svg>
+                  </span>
+                  <span v-else class="text-xs text-slate-400 dark:text-slate-500">-</span>
+                </td>
+                <td class="px-5 py-3.5">
+                  <span
+                    v-if="log.domestic_tracking"
+                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-500/20 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
+                    @click="copyDomesticTracking(log.domestic_tracking, $event)"
+                    title="点击复制集包单号"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
+                    </svg>
+                    {{ log.domestic_tracking }}
+                    <svg v-if="copiedDomesticTrackingId === log.domestic_tracking" xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 6 9 17l-5-5"/>
+                    </svg>
                   </span>
                   <span v-else class="text-xs text-slate-400 dark:text-slate-500">-</span>
                 </td>
                 <td class="px-5 py-3.5 text-xs text-slate-500 dark:text-slate-400 max-w-[200px] truncate pr-5">
-                  {{ log.note || '-' }}
+                  <div class="flex items-center gap-2">
+                    <span class="flex-1 min-w-0">{{ log.note || '-' }}</span>
+                    <button
+                      @click="openNoteEdit(log)"
+                      class="shrink-0 w-6 h-6 rounded flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all cursor-pointer"
+                      title="编辑备注"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                      </svg>
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -1055,13 +1614,13 @@ onMounted(loadLogs)
           :key="log.id"
           :class="[
             'rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm',
-            selectMode && selectedIds.has(log.id) ? 'border-violet-300 dark:border-violet-500/30' : ''
+            (selectMode || isConsolidationMode) && selectedIds.has(log.id) ? 'border-violet-300 dark:border-violet-500/30' : ''
           ]"
         >
           <!-- 顶部栏：选择 + 时间 + 类型 -->
           <div class="px-3 pt-2.5 pb-2 flex items-center justify-between gap-2">
             <!-- 移动端复选框 -->
-            <div v-if="selectMode" class="flex items-center shrink-0">
+            <div v-if="selectMode || isConsolidationMode" class="flex items-center shrink-0">
               <label class="custom-checkbox">
                 <input
                   type="checkbox"
@@ -1080,48 +1639,79 @@ onMounted(loadLogs)
 
           <!-- 商品名称 -->
           <div class="px-3 pb-2">
-            <p class="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-2">{{ log.product_name || '-' }}</p>
+            <div class="flex items-center gap-2 mb-2">
+              <p class="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-2">
+                <span class="align-middle">{{ log.product_name || '-' }}</span>
+                <button v-if="log.product_name" @click.stop="copyLogName(log)" class="inline-flex items-center justify-center align-middle ml-1.5 text-slate-400 hover:text-indigo-500 active:scale-90 transition-colors">
+                  <svg v-if="copiedLogId === log.id" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </button>
+              </p>
+            </div>
 
             <!-- 核心数据网格 - 紧凑 -->
-            <div class="flex items-center justify-between gap-1.5 py-1.5 px-2 rounded-lg" style="background: var(--bg-secondary);">
+            <div class="flex items-center justify-between gap-1 py-1 px-2 rounded-lg" style="background: var(--bg-secondary);">
               <!-- 变动数量 -->
-              <div class="text-center flex-1">
-                <p class="text-[15px] font-bold leading-none" :class="log.type === 'in' || log.type === 'add' ? 'text-emerald-500' : (log.type === 'out' ? 'text-rose-500' : 'text-amber-500')">
+              <div class="text-center flex-1 min-w-0">
+                <p class="text-[14px] font-bold leading-none truncate" :class="log.type === 'in' || log.type === 'add' ? 'text-emerald-500' : (log.type === 'out' ? 'text-rose-500' : 'text-amber-500')">
                   {{ log.type === 'in' || log.type === 'add' ? '+' : (log.type === 'out' ? '-' : '') }}{{ safeStock(log.quantity) }}
                 </p>
-                <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">变动</p>
+                <p class="text-[8px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">变动</p>
               </div>
-              <div class="w-px h-7" style="background: var(--border-default);"></div>
+              <div class="w-px h-6" style="background: var(--border-default);"></div>
               <!-- 操作前 -->
-              <div class="text-center flex-1">
-                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_before) }}</p>
-                <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">前</p>
+              <div class="text-center flex-1 min-w-0">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums truncate">{{ safeStock(log.stock_before) }}</p>
+                <p class="text-[8px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">前</p>
               </div>
-              <div class="w-px h-7" style="background: var(--border-default);"></div>
+              <div class="w-px h-6" style="background: var(--border-default);"></div>
               <!-- 操作后 -->
-              <div class="text-center flex-1">
-                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums">{{ safeStock(log.stock_after) }}</p>
-                <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">后</p>
+              <div class="text-center flex-1 min-w-0">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-200 leading-none tabular-nums truncate">{{ safeStock(log.stock_after) }}</p>
+                <p class="text-[8px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">后</p>
               </div>
             </div>
           </div>
 
           <!-- 附加信息 -->
-          <div v-if="log.category_name || log.tracking_number || log.note" class="px-3 pb-2.5 flex items-center justify-between gap-1.5">
-            <!-- 左侧：运单号 + 大类（右对齐组） -->
-            <div class="flex items-center gap-1.5 shrink-0">
-              <span v-if="log.tracking_number" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded font-mono bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20">
+          <div v-if="log.category_name || log.tracking_number || log.domestic_tracking || log.note" class="px-3 pb-2.5">
+            <!-- 第一行：运单号、集包单号、大类（紧凑横向排列） -->
+            <div class="flex items-center gap-1 flex-wrap mb-1">
+              <span v-if="log.tracking_number" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded font-mono bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20 cursor-pointer hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors truncate max-w-[120px]" @click.stop="copyTrackingNumber(log.tracking_number, $event)" title="点击复制运单号">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
                 </svg>
-                {{ log.tracking_number }}
+                <span class="truncate">{{ log.tracking_number }}</span>
+                <svg v-if="copiedTrackingId === log.tracking_number" xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6 9 17l-5-5"/>
+                </svg>
               </span>
-              <span v-if="log.category_name" class="inline-flex items-center px-1.5 py-0.5 text-[10px] rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">
+              <span v-if="log.domestic_tracking" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded font-mono bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-500/20 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors truncate max-w-[120px]" @click.stop="copyDomesticTracking(log.domestic_tracking, $event)" title="点击复制集包单号">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>
+                </svg>
+                <span class="truncate">{{ log.domestic_tracking }}</span>
+                <svg v-if="copiedDomesticTrackingId === log.domestic_tracking" xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6 9 17l-5-5"/>
+                </svg>
+              </span>
+              <span v-if="log.category_name" class="inline-flex items-center px-1.5 py-0.5 text-[10px] rounded bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 truncate max-w-[80px]">
                 {{ log.category_name }}
               </span>
             </div>
-            <!-- 右侧：备注（占据剩余空间，左对齐） -->
-            <span v-if="log.note" class="text-[11px] text-slate-500 dark:text-slate-400 truncate text-right min-w-0">{{ log.note }}</span>
+            <!-- 右侧：备注编辑 -->
+            <div v-if="log.note" class="flex items-center gap-1.5 min-w-0">
+              <span class="text-[11px] text-slate-500 dark:text-slate-400 truncate text-right flex-1">{{ log.note }}</span>
+              <button
+                @click="openNoteEdit(log)"
+                class="shrink-0 w-5 h-5 rounded flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all cursor-pointer"
+                title="编辑备注"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1399,6 +1989,165 @@ onMounted(loadLogs)
           </button>
         </template>
       </MyModal>
+
+      <!-- 备注编辑弹窗 -->
+      <Transition name="modal-fade">
+        <div v-if="showNoteModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showNoteModal = false"></div>
+          <div
+            class="relative w-full max-w-md rounded-2xl overflow-hidden scale-in
+                   bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl"
+          >
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">编辑备注</h3>
+              <button
+                @click="showNoteModal = false"
+                class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="p-6">
+              <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">商品：{{ editingNoteLog?.product_name }}</p>
+              <textarea
+                v-model="editingNoteText"
+                rows="3"
+                placeholder="输入备注信息"
+                class="w-full px-4 py-2.5 rounded-xl text-sm text-slate-900 dark:text-white
+                       bg-slate-50 dark:bg-slate-800 border-2 border-transparent
+                       placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-all resize-none leading-relaxed"
+              ></textarea>
+            </div>
+            <div class="px-6 pb-6 flex items-center gap-3">
+              <button
+                @click="showNoteModal = false"
+                class="flex-1 py-2.5 text-sm font-medium rounded-xl
+                       bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300
+                       border border-slate-200 dark:border-white/10
+                       hover:bg-slate-200 dark:hover:bg-white/10
+                       active:scale-95 transition-all cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                @click="saveNote"
+                :disabled="savingNote"
+                class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                style="background: linear-gradient(135deg, #6366f1, #4f46e5); box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);"
+              >
+                {{ savingNote ? '保存中...' : '保存' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 集包弹窗（绑定国内单号） -->
+      <Transition name="modal-fade">
+        <div v-if="showConsolidateModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="showConsolidateModal = false"></div>
+          <div
+            class="relative w-full max-w-md rounded-2xl overflow-hidden scale-in
+                   bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl"
+          >
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">绑定国内单号</h3>
+              <button
+                @click="showConsolidateModal = false"
+                class="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="p-6">
+              <p class="text-sm text-slate-600 dark:text-slate-300 mb-4">
+                已选择 <span class="font-bold text-indigo-500">{{ selectedCount }}</span> 条出库记录，统一绑定国内快递单号。
+              </p>
+              <!-- 国内单号输入 + 扫码按钮 -->
+              <div class="relative">
+                <input
+                  v-model="consolidatingDomesticTracking"
+                  type="text"
+                  placeholder="输入或扫码录入国内单号"
+                  class="w-full px-4 py-2.5 rounded-xl text-sm text-slate-900 dark:text-white
+                         bg-slate-50 dark:bg-slate-800 border-2 border-transparent
+                         placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition-all"
+                  :class="consolidatingDomesticTracking ? 'border-indigo-500' : ''"
+                >
+                <!-- 扫码图标 -->
+                <button
+                  @click="handleScanDomesticTracking"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-indigo-500 transition-all cursor-pointer"
+                  title="扫码录入"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 9a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V9z"/>
+                  </svg>
+                </button>
+              </div>
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                提示：扫码后可自动填充单号。绑定后可在搜索框输入该单号快速查询。
+              </p>
+            </div>
+            <div class="px-6 pb-6 flex items-center gap-3">
+              <button
+                @click="showConsolidateModal = false"
+                class="flex-1 py-2.5 text-sm font-medium rounded-xl
+                       bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300
+                       border border-slate-200 dark:border-white/10
+                       hover:bg-slate-200 dark:hover:bg-white/10
+                       active:scale-95 transition-all cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                @click="confirmConsolidate"
+                :disabled="!consolidatingDomesticTracking.trim() || consolidating"
+                class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                style="background: linear-gradient(135deg, #6366f1, #4f46e5); box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);"
+              >
+                {{ consolidating ? '绑定中...' : '确认绑定' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 扫码弹窗 -->
+      <div
+        v-if="showScanner"
+        class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80"
+      >
+        <div class="relative w-full max-w-sm rounded-2xl overflow-hidden bg-black">
+          <video
+            ref="scannerVideo"
+            class="w-full aspect-square object-cover"
+            playsinline
+          ></video>
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-48 h-48 border-2 border-white rounded-2xl"></div>
+          </div>
+          <div v-if="scannerError" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 text-white text-sm px-6 py-4 text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mb-3 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>
+            </svg>
+            {{ scannerError }}
+          </div>
+          <button
+            @click="stopScanner"
+            class="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-all cursor-pointer"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+            </svg>
+          </button>
+          <p class="absolute bottom-4 left-0 right-0 text-center text-white text-sm">将条形码放入框内自动识别</p>
+        </div>
+      </div>
 
     </div>
   </div>

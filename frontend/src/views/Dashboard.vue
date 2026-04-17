@@ -8,6 +8,7 @@ const loading = ref(true)
 const error = ref('')
 const refreshTime = ref('')
 const selectedCategory = ref('')
+const lowStockExpanded = ref(false)
 
 function updateRefreshTime() {
   const now = new Date()
@@ -63,6 +64,12 @@ function urgencyLabel(p) {
   if (p.current_stock === 0) return '缺货'
   return '预警'
 }
+
+const displayedLowStockList = computed(() => {
+  if (!stats.value?.lowStockList) return []
+  if (lowStockExpanded.value) return stats.value.lowStockList
+  return stats.value.lowStockList.slice(0, 7)
+})
 
 function formatCurrency(val) {
   return Number(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
@@ -320,7 +327,7 @@ onMounted(loadStats)
               </thead>
               <tbody class="divide-y divide-slate-50 dark:divide-white/5">
                 <tr
-                  v-for="p in stats.lowStockList"
+                  v-for="p in displayedLowStockList"
                   :key="p.id"
                   class="group"
                   :class="stockUrgency(p) === 'critical' ? 'bg-rose-50/50 dark:bg-rose-500/5' : 'hover:bg-slate-50 dark:hover:bg-white/[0.02]'"
@@ -363,7 +370,7 @@ onMounted(loadStats)
           <!-- 平板/手机 卡片列表 -->
           <div class="lg:hidden divide-y divide-slate-100 dark:divide-white/5">
             <div
-              v-for="p in stats.lowStockList"
+              v-for="p in displayedLowStockList"
               :key="p.id"
               class="p-4 sm:p-5"
               :class="stockUrgency(p) === 'critical' ? 'bg-rose-50/50 dark:bg-rose-500/5' : ''"
@@ -399,6 +406,29 @@ onMounted(loadStats)
                 </span>
               </div>
             </div>
+          </div>
+
+          <!-- 展开/收起按钮 -->
+          <div v-if="stats.lowStockList && stats.lowStockList.length > 7" class="px-5 py-3 border-t border-rose-100 dark:border-rose-500/10 bg-rose-50/30 dark:bg-rose-500/5">
+            <button
+              @click="lowStockExpanded = !lowStockExpanded"
+              class="w-full py-2 text-sm font-medium text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-4 h-4 transition-transform duration-200"
+                :class="lowStockExpanded ? 'rotate-180' : ''"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+              {{ lowStockExpanded ? '收起' : `展开全部 ${stats.lowStockList.length} 件` }}
+            </button>
           </div>
         </div>
       </div>

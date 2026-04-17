@@ -136,6 +136,7 @@ function createTables() {
   migrateCategorySortOrder();
   migrateCategoriesCreatedAt();
   migrateCategoryPrice();
+  migrateDomesticTracking();
 
   console.log('[DB] 表结构创建 / 迁移完成');
 }
@@ -376,6 +377,19 @@ function migrateCategoryPrice() {
   if (!existingColumns.includes('price')) {
     db.run('ALTER TABLE categories ADD COLUMN price REAL DEFAULT 0');
     console.log('[DB] 迁移：已添加 price 列到 categories 表');
+  }
+}
+
+/**
+ * 为 inventory_logs 表补充 domestic_tracking 国内单号字段
+ * 用于集包功能：批量绑定中通等国内单号
+ */
+function migrateDomesticTracking() {
+  const existingColumns = getExistingColumns('inventory_logs');
+
+  if (!existingColumns.includes('domestic_tracking')) {
+    db.run('ALTER TABLE inventory_logs ADD COLUMN domestic_tracking TEXT DEFAULT \'\'');
+    console.log('[DB] 迁移：已添加 domestic_tracking 列到 inventory_logs 表');
   }
 }
 

@@ -46,25 +46,45 @@ async function translateToEnglish(text) {
   }
 }
 
-// 翻译规格值（带缓存）
+// 翻译规格值（带缓存与特殊"标"字拦截）
 async function translateSpecValue(value) {
   if (!value) return '';
-  const str = String(value).trim();
-  if (!str) return '';
+  const originalStr = String(value).trim();
+  if (!originalStr) return '';
 
-  // 已经是纯英文或英文+数字混排（A4这种），不翻译
-  if (!hasChinese(str) && /^[A-Za-z0-9\s\-\.]+$/.test(str)) {
-    return str;
+  // 已经是纯英文或英文+数字混排，不翻译
+  if (!hasChinese(originalStr) && /^[A-Za-z0-9\s\-\.]+$/.test(originalStr)) {
+    return originalStr;
   }
 
   // 检查缓存
-  if (translationCache.has(str)) {
-    return translationCache.get(str);
+  if (translationCache.has(originalStr)) {
+    return translationCache.get(originalStr);
   }
 
-  // 需要翻译
-  const result = await translateToEnglish(str);
-  translationCache.set(str, result);
+  // ==========================================
+  // 【修改点】拦截并处理以"标"字结尾的规格
+  // ==========================================
+  let strToTranslate = originalStr;
+  let isLogoSuffix = false;
+
+  if (originalStr.endsWith('标')) {
+    strToTranslate = originalStr.slice(0, -1); // 去掉末尾的"标"字
+    isLogoSuffix = true;
+  }
+
+  let result;
+  if (isLogoSuffix && !strToTranslate) {
+    // 如果原词只有单个"标"字
+    result = 'LOGO';
+  } else {
+    // 翻译前半部分（如 "135-24R" 翻译后还是 "135-24R"）
+    const translatedPart = await translateToEnglish(strToTranslate);
+    // 如果原词以"标"结尾，则拼接" LOGO"
+    result = isLogoSuffix ? `${translatedPart} LOGO` : translatedPart;
+  }
+
+  translationCache.set(originalStr, result);
   return result;
 }
 
@@ -123,9 +143,9 @@ router.get('/', (req, res) => {
     params.push(category_id);
   }
   if (keyword) {
-    sql += ' AND (p.name LIKE ? OR p.sku_code LIKE ? OR p.location_code LIKE ?)';
+    sql += ' AND p.name LIKE ?';
     const kw = `%${keyword}%`;
-    params.push(kw, kw, kw);
+    params.push(kw);
   }
   sql += ' ORDER BY p.sort_order ASC, p.created_at DESC';
   const products = getAll(sql, params);
