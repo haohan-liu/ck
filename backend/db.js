@@ -8,8 +8,9 @@ let db = null;
 
 async function initDatabase() {
   const SQL = await initSqlJs();
+  const isNewDatabase = !fs.existsSync(DB_PATH);
 
-  if (fs.existsSync(DB_PATH)) {
+  if (!isNewDatabase) {
     const buffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(buffer);
     console.log('[DB] 数据库已加载:', DB_PATH);
@@ -19,7 +20,11 @@ async function initDatabase() {
   }
 
   createTables();
-  seedInitialData();
+  // 预置分类只用于首次创建全新数据库。现有数据库启动时绝不能重新插入
+  // 用户已经删除或改名的分类，否则每次重启服务都会把它们“复活”。
+  if (isNewDatabase) {
+    seedInitialData();
+  }
   saveDatabase();
 
   return db;

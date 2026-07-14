@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { api } from '../api/client.js'
 import MyFilterSelect from '../components/ui/MyFilterSelect.vue'
 
 const stats = ref(null)
 const loading = ref(true)
+const rankLoading = ref(false)
 const error = ref('')
 const refreshTime = ref('')
 const selectedCategory = ref('')
@@ -31,17 +32,29 @@ function updateRefreshTime() {
   })
 }
 
-async function loadStats() {
-  loading.value = true
-  error.value = ''
+async function loadStats({ silent = false } = {}) {
+  if (silent) {
+    rankLoading.value = true
+  } else {
+    loading.value = true
+    error.value = ''
+  }
   try {
-    const res = await api.get('/stats')
+    const params = selectedCategory.value ? { rank_category: selectedCategory.value } : undefined
+    const res = await api.get('/stats', { params })
     stats.value = res.data.data
     updateRefreshTime()
   } catch (e) {
-    error.value = '无法加载统计数据，请检查后端服务'
+    // 分类切换失败时保留当前页面，避免整页卸载并把滚动位置重置到顶部。
+    if (!silent) {
+      error.value = '无法加载统计数据，请检查后端服务'
+    }
   } finally {
-    loading.value = false
+    if (silent) {
+      rankLoading.value = false
+    } else {
+      loading.value = false
+    }
   }
 }
 
@@ -89,6 +102,11 @@ function formatCurrency(val) {
 }
 
 onMounted(loadStats)
+
+// 分类由后端在汇总前过滤，避免先取全局 Top 20 再在前端裁剪而漏掉该分类商品。
+watch(selectedCategory, () => {
+  loadStats({ silent: true })
+})
 </script>
 
 <template>

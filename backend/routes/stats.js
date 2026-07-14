@@ -19,12 +19,26 @@ function localDateTimeDaysAgo(days) {
          `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-function getOutboundRank(days = null, limit = null) {
+/**
+ * 按出库日志快照统计排行榜。
+ *
+ * 分类筛选必须使用日志写入当时的 category_name，而不能使用商品当前分类：
+ * 商品被重新归类后，历史出库记录仍应留在原分类的统计中。
+ */
+function getOutboundRank(days = null, limit = null, categoryName = '') {
   const params = [];
   let timeFilter = '';
   if (days !== null) {
     timeFilter = 'AND l.created_at >= ?';
     params.push(localDateTimeDaysAgo(days));
+  }
+
+  // 优先使用库存日志中的分类快照；兼容旧日志没有快照时再回退到当前商品分类。
+  const categorySnapshot = "COALESCE(NULLIF(l.category_name, ''), NULLIF(source_category.name, ''), '')";
+  let categoryFilter = '';
+  if (categoryName) {
+    categoryFilter = `AND ${categorySnapshot} = ?`;
+    params.push(categoryName);
   }
 
   let limitClause = '';
@@ -37,18 +51,22 @@ function getOutboundRank(days = null, limit = null) {
     WITH outbound AS (
       SELECT
         l.product_id,
+        ${categorySnapshot} AS category_name,
         SUM(ABS(l.quantity)) AS total_out_quantity,
         MAX(l.id) AS latest_log_id
       FROM inventory_logs l
+      LEFT JOIN products source_product ON source_product.id = l.product_id
+      LEFT JOIN categories source_category ON source_category.id = source_product.category_id
       WHERE l.type = 'out'
         ${timeFilter}
-      GROUP BY l.product_id
+        ${categoryFilter}
+      GROUP BY l.product_id, ${categorySnapshot}
       HAVING SUM(ABS(l.quantity)) > 0
     )
     SELECT
       outbound.product_id,
       COALESCE(NULLIF(p.name, ''), NULLIF(latest.product_name, ''), '') AS product_name,
-      COALESCE(NULLIF(c.name, ''), NULLIF(latest.category_name, ''), '') AS category_name,
+      outbound.category_name,
       outbound.total_out_quantity
     FROM outbound
     LEFT JOIN products p ON p.id = outbound.product_id
@@ -91,11 +109,15 @@ router.get('/', (req, res) => {
     ORDER BY c.sort_order ASC, c.id ASC
   `);
 
-  // 出库排行榜：30/60/90 天保留 Top 20，累计榜返回全部有效出库商品
-  const thirtyDayOutboundRank = getOutboundRank(30, 20);
-  const sixtyDayOutboundRank = getOutboundRank(60, 20);
-  const ninetyDayOutboundRank = getOutboundRank(90, 20);
-  const allTimeOutboundRank = getOutboundRank();
+  // 出库排行榜：分类筛选在聚合前执行，保证每个大类都能取得自己的 Top 20，
+  // 且分类口径与库存日志页面的历史快照一致。
+  const rankCategory = typeof req.query.rank_category === 'string'
+    ? req.query.rank_category.trim()
+    : '';
+  const thirtyDayOutboundRank = getOutboundRank(30, 20, rankCategory);
+  const sixtyDayOutboundRank = getOutboundRank(60, 20, rankCategory);
+  const ninetyDayOutboundRank = getOutboundRank(90, 20, rankCategory);
+  const allTimeOutboundRank = getOutboundRank(null, null, rankCategory);
 
   // 低库存预警产品列表（<= min_stock，包括等于的情况）
   const lowStockList = getAll(`
