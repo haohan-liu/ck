@@ -2,12 +2,14 @@
 import { ref, watch, computed, nextTick } from 'vue'
 import QRCode from 'qrcode'
 import jsPDF from 'jspdf'
+import MyMessage from './ui/MyMessage.js'
 
 const props = defineProps({ visible: Boolean, product: Object })
 const emit = defineEmits(['close'])
 
 const labelSize = ref('40x30')
 const qrCodeDataUrl = ref('')
+const printing = ref(false)
 
 async function generateQRCode() {
   if (!props.product?.sku_code) return
@@ -159,22 +161,53 @@ async function renderLabelToCanvas() {
 }
 
 async function handlePrint() {
-  if (!props.product || !qrCodeDataUrl.value) return
-  const w = currentConfig.value.width; const h = currentConfig.value.height
-  const canvas = await renderLabelToCanvas()
-  const imgData = canvas.toDataURL('image/png')
-  const pdf = new jsPDF({ orientation: w > h ? 'l' : 'p', unit: 'mm', format: [w, h] })
-  pdf.addImage(imgData, 'PNG', 0, 0, w, h)
-  const safeName = (props.product.name || '商品').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 50)
-  const safeSku = (props.product.sku_code || 'UNKNOWN').replace(/[\/\\:*?"<>|]/g, '_')
-  const fileName = `${safeName}_${safeSku}.pdf`
-  const blob = pdf.output('blob')
-  const blobUrl = URL.createObjectURL(blob)
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${fileName}</title><style>*{margin:0;padding:0;height:100%;}body{display:flex;justify-content:center;align-items:center;background:#333;}embed{width:100%;height:100%;border:none;}</style></head><body><embed src="${blobUrl}" type="application/pdf"><script>document.title=${JSON.stringify(fileName)};<\/script></body></html>`
-  const htmlBlob = new Blob([html], { type: 'text/html' })
-  const htmlUrl = URL.createObjectURL(htmlBlob)
-  window.open(htmlUrl, '_blank', 'noopener,noreferrer')
-  setTimeout(() => { URL.revokeObjectURL(blobUrl); URL.revokeObjectURL(htmlUrl) }, 300000)
+  if (!props.product || !qrCodeDataUrl.value || printing.value) return
+
+  // 先同步打开窗口，避免异步渲染后被浏览器拦截弹窗
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    MyMessage.error('浏览器阻止了打印窗口，请允许本站弹出窗口后重试')
+    return
+  }
+  printWindow.opener = null
+  printing.value = true
+
+  try {
+    const w = currentConfig.value.width
+    const h = currentConfig.value.height
+    const canvas = await renderLabelToCanvas()
+    const imgData = canvas.toDataURL('image/png')
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [w, h], compress: true })
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    if (Math.abs(pageWidth - w) > 0.1 || Math.abs(pageHeight - h) > 0.1) {
+      throw new Error(`PDF 页面尺寸异常：${pageWidth.toFixed(2)} × ${pageHeight.toFixed(2)} mm`)
+    }
+
+    pdf.addImage(imgData, 'PNG', 0, 0, w, h)
+    pdf.viewerPreferences({
+      PrintScaling: 'None',
+      PickTrayByPDFSize: true,
+      PrintArea: 'MediaBox',
+      PrintClip: 'MediaBox',
+    })
+
+    const safeName = (props.product.name || '商品').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 50)
+    const safeSku = (props.product.sku_code || 'UNKNOWN').replace(/[\/\\:*?"<>|]/g, '_')
+    const fileName = `${safeName}_${safeSku}.pdf`
+    pdf.setProperties({ title: fileName, subject: `${currentConfig.value.name} 商品标签` })
+
+    // 直接打开 PDF，避免外层 HTML/embed 页面参与打印尺寸计算
+    const blobUrl = URL.createObjectURL(pdf.output('blob'))
+    printWindow.location.replace(blobUrl)
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 300000)
+  } catch (err) {
+    printWindow.close()
+    MyMessage.error(err?.message || '标签生成失败，请重试')
+  } finally {
+    printing.value = false
+  }
 }
 </script>
 
@@ -260,6 +293,13 @@ async function handlePrint() {
             </div>
           </div>
           <p class="text-center text-xs text-slate-400 dark:text-slate-500">标签打印预览，接近实际打印尺寸（依显示器校准略有偏差）</p>
+
+          <div class="mt-4 rounded-xl px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
+            <p class="text-xs font-semibold text-amber-700 dark:text-amber-400">打印设置</p>
+            <p class="text-xs text-amber-600/90 dark:text-amber-400/80 mt-1 leading-relaxed">
+              纸张请选择 {{ currentConfig.name }}，缩放选择“实际大小 / 100%”，页边距选择“无”。打印机驱动中的纸张尺寸也需保持一致。
+            </p>
+          </div>
         </div>
 
         <!-- 底部按钮 -->
@@ -269,10 +309,10 @@ async function handlePrint() {
           </button>
           <button
             @click="handlePrint"
-            :disabled="!qrCodeDataUrl"
+            :disabled="!qrCodeDataUrl || printing"
             class="flex-1 py-2.5 text-sm font-bold text-white rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 shadow-md shadow-indigo-500/20 hover:from-indigo-600 hover:to-indigo-700 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
           >
-            确认打印
+            {{ printing ? '正在生成…' : '确认打印' }}
           </button>
         </div>
       </div>

@@ -136,7 +136,22 @@ function formatProduct(p) {
 
 router.get('/', (req, res) => {
   const { category_id, keyword } = req.query;
-  let sql = 'SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1';
+  let sql = `
+    SELECT
+      p.*,
+      c.name as category_name,
+      COALESCE(outbound.total_out_quantity, 0) as total_out_quantity
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    LEFT JOIN (
+      SELECT product_id, SUM(ABS(quantity)) as total_out_quantity
+      FROM inventory_logs
+      WHERE type = 'out'
+      GROUP BY product_id
+      HAVING SUM(ABS(quantity)) > 0
+    ) outbound ON outbound.product_id = p.id
+    WHERE 1=1
+  `;
   const params = [];
   if (category_id) {
     sql += ' AND p.category_id = ?';

@@ -9,6 +9,14 @@ const error = ref('')
 const refreshTime = ref('')
 const selectedCategory = ref('')
 const lowStockExpanded = ref(false)
+const selectedRankPeriod = ref('30')
+
+const rankPeriods = [
+  { key: '30', label: '近30天', title: '30天出库排行榜', description: '近30天出库', field: 'thirtyDayOutboundRank', emptyPrefix: '近30天内' },
+  { key: '60', label: '近60天', title: '60天出库排行榜', description: '近60天出库', field: 'sixtyDayOutboundRank', emptyPrefix: '近60天内' },
+  { key: '90', label: '近90天', title: '90天出库排行榜', description: '近90天出库', field: 'ninetyDayOutboundRank', emptyPrefix: '近90天内' },
+  { key: 'all', label: '累计', title: '累计出库排行榜', description: '全部历史出库', field: 'allTimeOutboundRank', emptyPrefix: '累计历史中' },
+]
 
 function updateRefreshTime() {
   const now = new Date()
@@ -47,10 +55,15 @@ const categoryOptions = computed(() => {
   ]
 })
 
+const activeRankPeriod = computed(() => (
+  rankPeriods.find(period => period.key === selectedRankPeriod.value) || rankPeriods[0]
+))
+
+const currentRank = computed(() => stats.value?.[activeRankPeriod.value.field] || [])
+
 const filteredRank = computed(() => {
-  if (!stats.value?.thirtyDayOutboundRank) return []
-  if (!selectedCategory.value) return stats.value.thirtyDayOutboundRank
-  return stats.value.thirtyDayOutboundRank.filter(item => item.category_name === selectedCategory.value)
+  if (!selectedCategory.value) return currentRank.value
+  return currentRank.value.filter(item => item.category_name === selectedCategory.value)
 })
 
 function stockUrgency(p) {
@@ -497,20 +510,22 @@ onMounted(loadStats)
         </div>
       </div>
 
-      <!-- ════ 30天出库排行榜 ════ -->
+      <!-- ════ 出库排行榜 ════ -->
       <div class="mb-4">
-        <!-- 区块标题 -->
-        <div class="flex items-center justify-between gap-4 mb-4">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/>
-              </svg>
+        <!-- 区块标题与周期切换 -->
+        <div class="mb-4 space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/>
+                </svg>
+              </div>
+              <div class="min-w-0">
+                <h3 class="text-base font-semibold text-slate-900 dark:text-white truncate">{{ activeRankPeriod.title }}</h3>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{{ activeRankPeriod.description }}</p>
+              </div>
             </div>
-            <h3 class="text-base font-semibold text-slate-900 dark:text-white">30天出库排行榜</h3>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-xs text-slate-400 dark:text-slate-500 hidden sm:block">近30天出库</span>
             <MyFilterSelect
               v-if="categoryOptions.length > 0"
               v-model="selectedCategory"
@@ -518,6 +533,22 @@ onMounted(loadStats)
               placeholder="按大类筛选"
               :style="{ width: '140px' }"
             />
+          </div>
+
+          <div class="overflow-x-auto pb-0.5">
+            <div class="inline-flex min-w-full sm:min-w-0 items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/70 dark:border-white/5">
+              <button
+                v-for="period in rankPeriods"
+                :key="period.key"
+                @click="selectedRankPeriod = period.key"
+                class="flex-1 sm:flex-none px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer"
+                :class="selectedRankPeriod === period.key
+                  ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+              >
+                {{ period.label }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -631,7 +662,7 @@ onMounted(loadStats)
                 {{ selectedCategory ? '该大类暂无出库记录' : '暂无出库数据' }}
               </p>
               <p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                {{ selectedCategory ? `近30天内"${selectedCategory}"没有出库记录` : '近30天内没有出库记录' }}
+                {{ selectedCategory ? `${activeRankPeriod.emptyPrefix}"${selectedCategory}"没有出库记录` : `${activeRankPeriod.emptyPrefix}没有出库记录` }}
               </p>
             </div>
             <button

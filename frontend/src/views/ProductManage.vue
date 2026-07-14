@@ -342,7 +342,7 @@ onMounted(() => {
       <div v-else-if="!loading && products.length > 0" class="hidden lg:block px-6 py-5">
         <div class="rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-sm">
           <div class="overflow-x-auto">
-            <table class="w-full text-sm min-w-[900px]">
+            <table class="w-full text-sm min-w-[1000px]">
               <thead>
                 <tr class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
                   <th class="w-12 px-3 py-3.5"></th>
@@ -350,6 +350,7 @@ onMounted(() => {
                   <th class="px-5 py-3.5 text-left font-medium min-w-[200px]">商品名称</th>
                   <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">大类</th>
                   <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">库存</th>
+                  <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">累计出库</th>
                   <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">预警</th>
                   <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">单价</th>
                   <th class="px-5 py-3.5 text-center font-medium whitespace-nowrap">库位</th>
@@ -416,6 +417,14 @@ onMounted(() => {
                         <span class="text-xs px-1.5 py-0.5 rounded font-medium" :class="stockStatus(p) === 'zero' ? 'bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400' : (stockStatus(p) === 'warn' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400')">
                           {{ stockLabel(p) }}
                         </span>
+                      </div>
+                    </td>
+                    <td class="px-5 py-3.5 text-center whitespace-nowrap">
+                      <div class="flex flex-col items-center gap-1">
+                        <span class="text-lg font-bold leading-none text-indigo-600 dark:text-indigo-400 tabular-nums">
+                          {{ Number(p.total_out_quantity || 0).toLocaleString() }}
+                        </span>
+                        <span class="text-xs text-slate-400 dark:text-slate-500">{{ p.unit }}</span>
                       </div>
                     </td>
                     <td class="px-5 py-3.5 text-center text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">{{ p.min_stock }} {{ p.unit }}</td>
@@ -522,25 +531,28 @@ onMounted(() => {
                 </div>
               </div>
 
-              <!-- 库存数据区域 - 紧凑横向布局 -->
+              <!-- 库存数据区域：窄屏 2×2，较宽屏四项横排 -->
               <div class="px-3 pb-2">
-                <div class="flex items-center justify-between gap-2 py-1.5 px-2.5 rounded-lg" style="background: var(--bg-secondary);">
+                <div class="grid grid-cols-2 sm:grid-cols-4 rounded-lg overflow-hidden" style="background: var(--bg-secondary);">
                   <!-- 当前库存 -->
-                  <div class="text-center flex-1">
+                  <div class="text-center px-2 py-2">
                     <p class="text-lg font-bold leading-none" :class="stockStatus(p) === 'zero' ? 'text-rose-500' : (stockStatus(p) === 'warn' ? 'text-amber-500' : 'text-slate-900 dark:text-white')">
                       {{ p.current_stock }}
                     </p>
                     <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">当前 / {{ p.unit }}</p>
                   </div>
-                  <div class="w-px h-8" style="background: var(--border-default);"></div>
+                  <!-- 累计出库 -->
+                  <div class="text-center px-2 py-2 border-l sm:border-l" style="border-color: var(--border-default);">
+                    <p class="text-lg font-bold leading-none text-indigo-600 dark:text-indigo-400 tabular-nums">{{ Number(p.total_out_quantity || 0).toLocaleString() }}</p>
+                    <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">累计出库 / {{ p.unit }}</p>
+                  </div>
                   <!-- 最低预警 -->
-                  <div class="text-center flex-1">
+                  <div class="text-center px-2 py-2 border-t sm:border-t-0 sm:border-l" style="border-color: var(--border-default);">
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-300 leading-none">{{ p.min_stock }}</p>
                     <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">预警 / {{ p.unit }}</p>
                   </div>
-                  <div class="w-px h-8" style="background: var(--border-default);"></div>
                   <!-- 单价 -->
-                  <div class="text-center flex-1">
+                  <div class="text-center px-2 py-2 border-t border-l sm:border-t-0" style="border-color: var(--border-default);">
                     <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-none">¥{{ Number(p.cost_price || 0).toFixed(2) }}</p>
                     <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">单价</p>
                   </div>

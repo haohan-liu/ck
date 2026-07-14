@@ -11,6 +11,57 @@ function formatProduct(p) {
   return { ...p, attributes: attrs };
 }
 
+function localDateTimeDaysAgo(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+         `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function getOutboundRank(days = null, limit = null) {
+  const params = [];
+  let timeFilter = '';
+  if (days !== null) {
+    timeFilter = 'AND l.created_at >= ?';
+    params.push(localDateTimeDaysAgo(days));
+  }
+
+  let limitClause = '';
+  if (limit !== null) {
+    limitClause = 'LIMIT ?';
+    params.push(limit);
+  }
+
+  return getAll(`
+    WITH outbound AS (
+      SELECT
+        l.product_id,
+        SUM(ABS(l.quantity)) AS total_out_quantity,
+        MAX(l.id) AS latest_log_id
+      FROM inventory_logs l
+      WHERE l.type = 'out'
+        ${timeFilter}
+      GROUP BY l.product_id
+      HAVING SUM(ABS(l.quantity)) > 0
+    )
+    SELECT
+      outbound.product_id,
+      COALESCE(NULLIF(p.name, ''), NULLIF(latest.product_name, ''), '') AS product_name,
+      COALESCE(NULLIF(c.name, ''), NULLIF(latest.category_name, ''), '') AS category_name,
+      outbound.total_out_quantity
+    FROM outbound
+    LEFT JOIN products p ON p.id = outbound.product_id
+    LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN inventory_logs latest ON latest.id = outbound.latest_log_id
+    ORDER BY
+      outbound.total_out_quantity DESC,
+      product_name COLLATE NOCASE ASC,
+      outbound.product_id ASC
+    ${limitClause}
+  `, params);
+}
+
 router.get('/', (req, res) => {
   // 使用本地日期而不是 UTC，避免时区差异
   const pad = n => String(n).padStart(2, '0');
@@ -40,20 +91,11 @@ router.get('/', (req, res) => {
     ORDER BY c.sort_order ASC, c.id ASC
   `);
 
-  // 30天出库排行榜
-  const thirtyDayOutboundRank = getAll(`
-    SELECT
-      l.product_id,
-      l.product_name,
-      l.category_name,
-      SUM(ABS(l.quantity)) as total_out_quantity
-    FROM inventory_logs l
-    WHERE l.type = 'out'
-      AND l.created_at >= datetime('now', '-30 days')
-    GROUP BY l.product_id, l.product_name, l.category_name
-    ORDER BY total_out_quantity DESC
-    LIMIT 20
-  `);
+  // 出库排行榜：30/60/90 天保留 Top 20，累计榜返回全部有效出库商品
+  const thirtyDayOutboundRank = getOutboundRank(30, 20);
+  const sixtyDayOutboundRank = getOutboundRank(60, 20);
+  const ninetyDayOutboundRank = getOutboundRank(90, 20);
+  const allTimeOutboundRank = getOutboundRank();
 
   // 低库存预警产品列表（<= min_stock，包括等于的情况）
   const lowStockList = getAll(`
@@ -77,6 +119,9 @@ router.get('/', (req, res) => {
       todayOut,
       byCategory,
       thirtyDayOutboundRank,
+      sixtyDayOutboundRank,
+      ninetyDayOutboundRank,
+      allTimeOutboundRank,
       lowStockList: lowStockList.map(formatProduct),
     }
   });
