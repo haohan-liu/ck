@@ -1,0 +1,1 @@
+import{t as e}from"./client-DfxVQDsG.js";function t(){return e.get(`/categories`)}function n(t){return e.post(`/categories`,t)}function r(t,n){return e.put(`/categories/${t}`,n)}function i(t){return e.delete(`/categories/${t}`)}function a(t){return e.post(`/categories/reorder`,{items:t})}export{a,r as i,i as n,t as r,n as t};
